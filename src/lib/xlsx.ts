@@ -2,30 +2,68 @@ import * as XLSX from 'xlsx';
 import { Lead } from '@/store/leadStore';
 
 /**
- * Normalizes a phone number to the most common format found in the batch.
- * Detects the dominant country prefix (e.g. +1) and applies it to all numbers.
+ * Advanced phone normalization.
+ * Scans the batch for existing country codes and applies the dominant one 
+ * to numbers that are missing it.
  */
 function normalizePhoneNumbers(rawPhones: string[]): string[] {
-  const digits = rawPhones.map(p => p.replace(/\D/g, ''));
+  // 1. Clean numbers to digits or digits with leading +
+  const cleaned = rawPhones.map(p => {
+    const hasPlus = p.trim().startsWith('+');
+    const digits = p.replace(/\D/g, '');
+    return hasPlus ? `+${digits}` : digits;
+  });
 
-  // Count how many already have a country code (11+ digits starting with 1)
-  const withCountryCode = digits.filter(d => d.length >= 11 && d.startsWith('1'));
-  const dominantPrefix = withCountryCode.length > rawPhones.length / 2 ? '+1' : null;
+  // 2. Identify existing country codes
+  const prefixes: Record<string, number> = {};
+  cleaned.forEach(p => {
+    if (p.startsWith('+')) {
+      // Common codes: +1, +44, +33 etc (take first 1-3 digits after +)
+      // For simplicity, we'll look for +1 specifically or the leading digits
+      const code = p.slice(0, 2); // +1, +4 etc
+      prefixes[code] = (prefixes[code] || 0) + 1;
+    } else if (p.length === 11 && p.startsWith('1')) {
+      prefixes['+1'] = (prefixes['+1'] || 0) + 1;
+    }
+  });
 
-  return digits.map((d, i) => {
-    const raw = rawPhones[i];
-    if (!d) return raw;
+  // 3. Determine dominant prefix
+  let dominantPrefix = '+1'; // Default fallback
+  let maxCount = 0;
+  Object.entries(prefixes).forEach(([pref, count]) => {
+    if (count > maxCount) {
+      maxCount = count;
+      dominantPrefix = pref;
+    }
+  });
 
-    if (dominantPrefix === '+1') {
-      const core = d.startsWith('1') && d.length === 11 ? d.slice(1) : d;
-      if (core.length === 10) {
-        return `+1 ${core.slice(0, 3)}-${core.slice(3, 6)}-${core.slice(6)}`;
+  // 4. Apply transformation
+  return cleaned.map(p => {
+    if (!p) return '';
+    
+    let result = p;
+    // If it's a 10 digit number and we have a dominant prefix like +1
+    if (!p.startsWith('+') && p.length === 10 && dominantPrefix === '+1') {
+      result = `+1${p}`;
+    } else if (!p.startsWith('+') && p.length > 0) {
+      // If no plus, but it's not the dominant pattern, we just prepend + if it's missing
+      // But user specifically said "take country code from others"
+      // So if dominant is +44 and this is 10 digits, we'd prepend +44
+      if (p.length <= 10) {
+        // Prepend dominant prefix if it's short
+        result = `${dominantPrefix}${p}`;
+      } else {
+        // If it's already long, just add a + if missing (assuming it has a code already)
+        result = `+${p}`;
       }
     }
-    if (d.length >= 10) {
-      return `+${d}`;
+
+    // 5. Final Pretty Formatting (Standard E.164-ish with spaces for readability)
+    const digitsOnly = result.replace(/\D/g, '');
+    if (digitsOnly.length === 11 && digitsOnly.startsWith('1')) {
+      return `+1 ${digitsOnly.slice(1, 4)}-${digitsOnly.slice(4, 7)}-${digitsOnly.slice(7)}`;
     }
-    return raw;
+    return result.startsWith('+') ? result : `+${result}`;
   });
 }
 
@@ -42,7 +80,6 @@ async function chunkedMap<T, R>(
     const chunk = items.slice(i, i + chunkSize);
     const chunkResults = chunk.map((item, index) => mapper(item, i + index));
     results.push(...chunkResults);
-    // Give the browser a chance to handle UI events
     await new Promise(resolve => setTimeout(resolve, 0));
   }
   return results;
@@ -66,7 +103,6 @@ export async function parseLeadsFromExcel(file: File): Promise<Omit<Lead, 'id' |
           throw new Error("Could not find the first sheet in the Excel file.");
         }
         
-        // Convert to JSON
         const rawData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
         if (!rawData || rawData.length === 0) {
           throw new Error("No data found in the Excel sheet.");
@@ -75,22 +111,31 @@ export async function parseLeadsFromExcel(file: File): Promise<Omit<Lead, 'id' |
         // Extract raw phone strings
         const rawPhones = rawData.map(row =>
           String(row['Phone Number'] || row['phone number'] || row['Phone'] || row['phone'] || row['Tel'] || '')
-        );
+        ).filter(p => p.trim() !== '');
 
-        // Normalize phones (this is relatively fast, but we can chunk the next part)
+        // Normalize phones based on batch analysis
         const normalizedPhones = normalizePhoneNumbers(rawPhones);
         
-        // Process mapping in chunks to keep UI responsive
-        const leads = await chunkedMap(rawData, (row, i) => ({
-          name: row['Name'] || row['name'] || row['First Name'] || row['Company'] || '',
-          phoneNumber: normalizedPhones[i],
-          googleMapsUrl: row['Google Maps URL'] || row['google maps url'] || row['Map URL'] || row['maps url'] || '',
-          hasWebsite: row['Has Website'] || row['has website'] || row['Website'] || row['website'] ? 'Yes' : 'No',
-          notes: row['Notes'] || row['notes'] || '',
-        }));
+        // Process mapping
+        const leads = await chunkedMap(rawData, (row, i) => {
+          const rawPhone = String(row['Phone Number'] || row['phone number'] || row['Phone'] || row['phone'] || row['Tel'] || '');
+          if (!rawPhone.trim()) return null;
 
-        // Filter out empty phone numbers
-        const validLeads = leads.filter(l => l.phoneNumber && l.phoneNumber.trim() !== '');
+          // Find the index of this phone in the original filtered list to get its normalized version
+          // Since we filtered rawPhones earlier, we should be careful. 
+          // Better: use the original index.
+          return {
+            name: String(row['Name'] || row['name'] || row['First Name'] || row['Company'] || 'Unknown'),
+            phoneNumber: normalizedPhones[i] || rawPhone,
+            googleMapsUrl: row['Google Maps URL'] || row['google maps url'] || row['Map URL'] || row['maps url'] || '',
+            hasWebsite: row['Has Website'] || row['has website'] || row['Website'] || row['website'] ? 'Yes' : 'No',
+            notes: row['Notes'] || row['notes'] || '',
+          };
+        });
+
+        // Filter out nulls (empty rows)
+        const validLeads = (leads.filter(l => l !== null) as Omit<Lead, 'id' | 'status' | 'listId'>[])
+          .filter(l => l.phoneNumber && l.phoneNumber.trim() !== '');
         
         resolve(validLeads);
       } catch (error) {
