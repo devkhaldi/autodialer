@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '@/lib/supabase';
+import { persist } from 'zustand/middleware';
 
 export interface Lead {
   id: string;
@@ -7,91 +7,106 @@ export interface Lead {
   phoneNumber: string;
   googleMapsUrl: string;
   hasWebsite: string;
-  timezone: string;
-  niche: string;
   notes: string;
+  listId: string; // The ID of the list/campaign this lead belongs to
   status: 'Uncalled' | 'Called' | 'Interested' | 'Callback Requested' | 'Failed' | 'DNC' | 'No Answer' | 'Wrong Number' | 'Busy' | 'Answering Machine' | 'Successful Sale' | 'Not Interested';
   [key: string]: any;
 }
 
-interface LeadState {
-  leads: Lead[];
-  loading: boolean;
-  setLeads: (leads: Lead[]) => void;
-  fetchLeads: () => Promise<void>;
-  addLead: (lead: Omit<Lead, 'id' | 'status'>) => Promise<void>;
-  addLeads: (leads: Omit<Lead, 'id' | 'status'>[]) => Promise<void>;
-  updateLeadStatus: (id: string, status: Lead['status'], newNotes?: string) => Promise<void>;
-  clearLeads: () => Promise<void>;
+export interface LeadList {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
-export const useLeadStore = create<LeadState>((set, get) => ({
-  leads: [],
-  loading: false,
+interface LeadState {
+  leads: Lead[];
+  lists: LeadList[];
+  activeListId: string | null;
+  loading: boolean;
+  
+  setActiveList: (id: string | null) => void;
+  addLeadsToList: (listName: string, leadsInput: Omit<Lead, 'id' | 'status' | 'listId'>[]) => void;
+  addLeadsToExistingList: (listId: string, leadsInput: Omit<Lead, 'id' | 'status' | 'listId'>[]) => void;
+  updateLeadStatus: (id: string, status: Lead['status'], newNotes?: string) => void;
+  deleteList: (listId: string) => void;
+  clearAll: () => void;
+}
 
-  setLeads: (leads) => set({ leads }),
+export const useLeadStore = create<LeadState>()(
+  persist(
+    (set, get) => ({
+      leads: [],
+      lists: [],
+      activeListId: null,
+      loading: false,
 
-  /** Fetch all leads from Supabase */
-  fetchLeads: async () => {
-    set({ loading: true });
-    const { data, error } = await supabase
-      .from('leads')
-      .select('*')
-      .order('created_at', { ascending: true });
-    if (!error && data) {
-      set({ leads: data as Lead[] });
+      setActiveList: (id) => set({ activeListId: id }),
+
+      /** Creates a new list and adds leads to it */
+      addLeadsToList: (listName, leadsInput) => {
+        const listId = crypto.randomUUID();
+        const newList: LeadList = {
+          id: listId,
+          name: listName,
+          createdAt: Date.now(),
+        };
+
+        const newLeads: Lead[] = leadsInput.map((l) => ({
+          ...l,
+          id: crypto.randomUUID(),
+          listId: listId,
+          status: 'Uncalled' as const,
+        } as Lead));
+
+        set((state) => ({
+          lists: [...state.lists, newList],
+          leads: [...state.leads, ...newLeads],
+          activeListId: state.activeListId || listId, // Auto-select if none selected
+        }));
+      },
+
+      /** Adds leads to an already established list */
+      addLeadsToExistingList: (listId, leadsInput) => {
+        const newLeads: Lead[] = leadsInput.map((l) => ({
+          ...l,
+          id: crypto.randomUUID(),
+          listId: listId,
+          status: 'Uncalled' as const,
+        } as Lead));
+
+        set((state) => ({
+          leads: [...state.leads, ...newLeads],
+        }));
+      },
+
+      /** Update status and append notes for a lead */
+      updateLeadStatus: (id, status, newNotes) =>
+        set((state) => ({
+          leads: state.leads.map((lead) => {
+            if (lead.id !== id) return lead;
+            const updatedNotes = newNotes
+              ? lead.notes
+                ? `${lead.notes}\n---\n${newNotes}`
+                : newNotes
+              : lead.notes;
+            return { ...lead, status, notes: updatedNotes };
+          }),
+        })),
+
+      /** Deletes a specific list and all its leads */
+      deleteList: (listId) =>
+        set((state) => ({
+          lists: state.lists.filter((l) => l.id !== listId),
+          leads: state.leads.filter((l) => l.listId !== listId),
+          activeListId: state.activeListId === listId ? (state.lists.length > 1 ? state.lists.find(l => l.id !== listId)?.id || null : null) : state.activeListId,
+        })),
+
+      /** Clear everything */
+      clearAll: () => set({ leads: [], lists: [], activeListId: null }),
+    }),
+    {
+      name: 'autodialer-storage',
     }
-    set({ loading: false });
-  },
-
-  /** Insert a single lead into Supabase */
-  addLead: async (lead) => {
-    const { data, error } = await supabase
-      .from('leads')
-      .insert([{ ...lead, status: 'Uncalled' }])
-      .select()
-      .single();
-    if (!error && data) {
-      set((state) => ({ leads: [...state.leads, data as Lead] }));
-    }
-  },
-
-  /** Bulk insert leads (e.g. from XLSX) into Supabase */
-  addLeads: async (leadsInput) => {
-    const rows = leadsInput.map(l => ({ ...l, status: 'Uncalled' }));
-    const { data, error } = await supabase
-      .from('leads')
-      .insert(rows)
-      .select();
-    if (!error && data) {
-      set((state) => ({ leads: [...state.leads, ...(data as Lead[])] }));
-    }
-  },
-
-  /** Update status and notes for a lead */
-  updateLeadStatus: async (id, status, newNotes) => {
-    const existing = get().leads.find(l => l.id === id);
-    const updatedNotes = newNotes
-      ? existing?.notes ? `${existing.notes}\n---\n${newNotes}` : newNotes
-      : existing?.notes || '';
-
-    const { data, error } = await supabase
-      .from('leads')
-      .update({ status, notes: updatedNotes })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (!error && data) {
-      set((state) => ({
-        leads: state.leads.map(l => l.id === id ? (data as Lead) : l),
-      }));
-    }
-  },
-
-  /** Delete all leads from Supabase */
-  clearLeads: async () => {
-    await supabase.from('leads').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    set({ leads: [] });
-  },
-}));
+  )
+);

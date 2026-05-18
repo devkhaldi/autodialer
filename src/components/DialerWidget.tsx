@@ -15,7 +15,7 @@ export function DialerWidget() {
     incrementTimer, resetTimer, clearQueue, delaySeconds 
   } = useDialerStore();
   
-  const { leads } = useLeadStore();
+  const { leads, activeListId } = useLeadStore();
   const [error, setError] = useState('');
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,7 +55,7 @@ export function DialerWidget() {
 
   const handleStartDialing = () => {
     setError('');
-    const uncalledLeads = leads.filter(l => l.status === 'Uncalled');
+    const uncalledLeads = leads.filter(l => l.status === 'Uncalled' && l.listId === activeListId);
     if (uncalledLeads.length === 0) {
       setError("No 'Uncalled' leads available in list.");
       return;
@@ -97,7 +97,7 @@ export function DialerWidget() {
                 <Phone className="h-8 w-8" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900">Power Dialer Ready</h3>
-              <p className="text-sm text-gray-500">You have <span className="font-semibold text-gray-700">{leads.filter(l => l.status === 'Uncalled').length}</span> uncalled leads loaded.</p>
+              <p className="text-sm text-gray-500">You have <span className="font-semibold text-gray-700">{leads.filter(l => l.status === 'Uncalled' && l.listId === activeListId).length}</span> uncalled leads in this list.</p>
               {error && <p className="text-sm text-red-500 font-medium bg-red-50 rounded-lg p-3">{error}</p>}
               <Button onClick={handleStartDialing} size="lg" className="w-full justify-center space-x-2 mt-4">
                 <Play className="h-4 w-4 mr-2" />

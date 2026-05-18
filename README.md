@@ -1,51 +1,56 @@
-# Lynxia Auto Dialer
+# autodialer
 
-A modern, production-ready auto dialer application designed for outbound sales and cold outreach agencies. Built with Next.js, Tailwind CSS, Zustand, and `sip.js` for WebRTC communication directly in the browser via Zadarma.
+A modern, production-ready WebRTC power dialer designed for outbound sales and cold outreach. Built with Next.js, Tailwind CSS, and Zustand.
 
 ## Features
 
-- **XLSX Prospect Upload**: Drag and drop `.xlsx` or `.csv` files to import your massive lead databases.
-- **WebRTC Auto-Dialing**: Directly connects to Zadarma SIP trunk to execute calls from within the browser. 
-- **Queue & Modals**: After a call concludes, a disposition modal lets you update lead status and notes safely before continuing.
-- **Configurable Delays**: Configure dialer delays locally to abide by compliance or workflow preferences.
-- **Live Metrics**: Dashboard and complete call history filtering out interested leads vs DNC lists.
-- **Fully Local & State Managed**: Built securely; everything uses the client browser ensuring no data leakage outside of the frontend unless specified.
+- **Light Mode UI**: High-density, clean dashboard optimized for sales productivity.
+- **XLSX Prospect Upload**: Drag and drop `.xlsx` files. Smart mapping handles various headers for Name, Phone, Google Maps URL, hasWebsite, etc.
+- **Smart Phone Normalization**: Automatically detects the dominant phone format in a batch and normalizes all entries (e.g., converting `(212) 812-9200` to `+1 212-812-9200` if the batch is mostly +1).
+- **WebRTC Calling**: Directly connects to Zadarma SIP trunk for browser-based calling.
+- **Queue Control**: Start auto-dialing, pause, skip, or stop the session anytime.
+- **Manual Lead Entry**: Add single or multiple leads manually with fields for **Timezone** and **Niche**.
+- **LocalStorage Persistence**: All leads and call history survive page refreshes with zero setup required.
+- **CRM Integration Ready**: Supabase integration is pre-architected; just add environment variables.
 
 ## Prerequisites
 
 - Node.js (v18+)
-- A Zadarma account with SIP numbers configured
+- Zadarma account with SIP number and WebRTC login/password.
 
 ## Setup Instructions
 
-1. Install all dependencies:
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Copy `.env.example` to `.env` and fill out your SIP account details:
+2. Configuration (`.env`):
+Create a `.env` file in the root based on `.env.example`:
 ```bash
-NEXT_PUBLIC_ZADARMA_SIP_LOGIN=your_sip_login
-NEXT_PUBLIC_ZADARMA_SIP_PASSWORD=your_sip_password
+NEXT_PUBLIC_ZADARMA_SIP_LOGIN=12345
+NEXT_PUBLIC_ZADARMA_SIP_PASSWORD=your_password
 ```
 
-3. Run the development server:
+3. Run:
 ```bash
 npm run dev
 ```
 
-4. Go to `http://localhost:3000`.
+4. Open [http://localhost:3000](http://localhost:3000).
 
-## Architecture Details
+## Lead Data Schema
 
-- **Stores**: Two main Zustand stores encapsulate the entire logic. `useLeadStore` acts as a normalized database tracker, whereas `useDialerStore` behaves as a finite state machine orchestrating the queue, timers, and WebRTC delays. 
-- **SIP Client**: Utilizes `sip.js` wrapped inside `src/lib/sipClient.ts`. It securely communicates to Zadarma WebRTC gateways utilizing `navigator.mediaDevices`.
+The dialer works best with these column headers in your XLSX:
+- **Name** (or First Name / Company)
+- **Phone Number**
+- **Timezone**
+- **Niche**
+- **Google Maps URL**
+- **Has Website**
 
-## Template XLSX
+## Persistence
 
-To test, simply upload any `.xlsx` with the following column headers:
-- `First Name`
-- `Last Name`
-- `Phone Number` (Ensure numbers contain the dial code, depending on your Zadarma route set up, usually E.164 format)
-- `Company`
-- `Email`
+Currently, the application uses **LocalStorage** via Zustand `persist` middleware. This means your data is stored securely in your own browser. To use Supabase for team-wide persistence, see `src/store/leadStore.ts` and provide the following variables:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
