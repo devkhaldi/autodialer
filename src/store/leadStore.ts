@@ -19,6 +19,13 @@ export interface LeadList {
   createdAt: number;
 }
 
+const getUuid = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+};
+
 interface LeadState {
   leads: Lead[];
   lists: LeadList[];
@@ -45,7 +52,7 @@ export const useLeadStore = create<LeadState>()(
 
       /** Creates a new list and adds leads to it */
       addLeadsToList: (listName, leadsInput) => {
-        const listId = crypto.randomUUID();
+        const listId = getUuid();
         const newList: LeadList = {
           id: listId,
           name: listName,
@@ -54,7 +61,7 @@ export const useLeadStore = create<LeadState>()(
 
         const newLeads: Lead[] = leadsInput.map((l) => ({
           ...l,
-          id: crypto.randomUUID(),
+          id: getUuid(),
           listId: listId,
           status: 'Uncalled' as const,
         } as Lead));
@@ -70,7 +77,7 @@ export const useLeadStore = create<LeadState>()(
       addLeadsToExistingList: (listId, leadsInput) => {
         const newLeads: Lead[] = leadsInput.map((l) => ({
           ...l,
-          id: crypto.randomUUID(),
+          id: getUuid(),
           listId: listId,
           status: 'Uncalled' as const,
         } as Lead));

@@ -56,11 +56,21 @@ export async function parseLeadsFromExcel(file: File): Promise<Omit<Lead, 'id' |
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
+        if (!workbook || !workbook.SheetNames.length) {
+          throw new Error("The Excel file seems to be empty or invalid.");
+        }
+
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
+        if (!worksheet) {
+          throw new Error("Could not find the first sheet in the Excel file.");
+        }
         
         // Convert to JSON
         const rawData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+        if (!rawData || rawData.length === 0) {
+          throw new Error("No data found in the Excel sheet.");
+        }
 
         // Extract raw phone strings
         const rawPhones = rawData.map(row =>

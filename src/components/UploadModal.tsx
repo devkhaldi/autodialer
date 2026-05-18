@@ -42,8 +42,9 @@ export function UploadModal({ isOpen, onClose }: UploadModalProps) {
       setFile(null);
       setListName('');
       onClose();
-    } catch (err) {
-      setError("Failed to parse the Excel file. Make sure it's a valid .xlsx or .csv");
+    } catch (err: any) {
+      console.error("XLSX Upload Error:", err);
+      setError(`Error: ${err.message || "Failed to parse the file. Ensure it's not open in another program and is a valid XLSX."}`);
     } finally {
       setLoading(false);
     }
