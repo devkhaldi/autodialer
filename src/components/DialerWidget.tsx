@@ -55,6 +55,21 @@ export function DialerWidget() {
     nextLead();
   };
 
+  const copyLeadInfo = () => {
+    if (!currentLead) return;
+    const info = `
+Name: ${currentLead.name}
+Phone: ${currentLead.phoneNumber}
+${currentLead.googleMapsUrl ? `Maps: ${currentLead.googleMapsUrl}` : ''}
+${Object.entries(currentLead)
+  .filter(([k]) => !['id', 'name', 'phoneNumber', 'googleMapsUrl', 'listId', '__id'].includes(k))
+  .map(([k, v]) => `${k}: ${v}`)
+  .join('\n')}
+    `.trim();
+    navigator.clipboard.writeText(info);
+    alert("Lead information copied to clipboard!");
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -197,55 +212,93 @@ export function DialerWidget() {
             </div>
           </div>
 
-          {/* Right Pane - Map & Business Info (60%) */}
-          <div className="flex-1 bg-gray-100 flex flex-col relative overflow-hidden">
-            <div className="absolute top-4 left-4 z-10 flex space-x-2">
-              <Badge className="bg-white/90 text-gray-700 backdrop-blur-sm border shadow-sm flex items-center space-x-2 px-3 py-1.5 capitalize">
-                <MapPin className="h-3 w-3 text-red-500" />
-                <span>Live Map Insight</span>
-              </Badge>
-              {currentLead?.googleMapsUrl && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-7 bg-white/90 backdrop-blur-sm text-[10px] font-bold"
-                  onClick={() => window.open(currentLead.googleMapsUrl, '_blank')}
-                >
-                  <ExternalLink className="h-3 w-3 mr-1" /> Open Main Link
-                </Button>
-              )}
-            </div>
-            
-            {currentLead?.googleMapsUrl || currentLead?.name ? (
-              <div className="w-full h-full flex flex-col pt-12">
-                <iframe 
-                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + (currentLead.phoneNumber || ""))}&output=embed&z=17`}
-                  className="w-full h-full border-0 rounded-t-xl bg-white"
-                  title="Google Maps Context"
-                  allowFullScreen
-                  loading="lazy"
-                />
-                <div className="p-4 bg-white border-t border-gray-200 text-center flex flex-col items-center justify-center space-y-3">
-                  <div className="text-[10px] text-gray-400 font-medium uppercase tracking-widest">Interactive Data Panel</div>
+          {/* Right Pane - Native Business Data Panel (60%) */}
+          <div className="flex-1 bg-white flex flex-col relative overflow-hidden border-l border-gray-100">
+            <div className="p-6 h-full overflow-y-auto space-y-8">
+              <header className="flex justify-between items-start border-b border-gray-100 pb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900 tracking-tight">{currentLead?.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1 flex items-center">
+                    <MapPin className="h-4 w-4 mr-1 text-red-500" /> Lead Identity Panel
+                  </p>
+                </div>
+                <div className="flex space-x-2">
+                  <Button variant="outline" size="sm" onClick={copyLeadInfo}>
+                    Copy Full Data
+                  </Button>
                   <Button 
-                    variant="default" 
-                    size="lg" 
-                    className="w-full max-w-sm bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 py-6"
+                    className="bg-blue-600 hover:bg-blue-700" 
+                    size="sm"
                     onClick={() => window.open(currentLead?.googleMapsUrl || `https://www.google.com/maps/search/${encodeURIComponent(currentLead?.name || '')}`, '_blank')}
                   >
-                    <ExternalLink className="h-5 w-5 mr-3" /> OPEN BUSINESS CARD & REVIEWS
+                    <ExternalLink className="h-4 w-4 mr-2" /> Open in Maps
                   </Button>
-                  <p className="text-[10px] text-gray-400 italic">Click above to view full ratings, photos, and SPA details in a separate window.</p>
+                </div>
+              </header>
+
+              <div className="grid grid-cols-2 gap-6 pt-2">
+                 <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Company Status</label>
+                      <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                         {currentLead?.hasWebsite && currentLead.hasWebsite !== 'N/A' ? (
+                           <div className="text-green-600 font-medium flex items-center">
+                             <div className="w-2 h-2 rounded-full bg-green-500 mr-2" />
+                             Has Website
+                           </div>
+                         ) : (
+                           <div className="text-amber-600 font-medium flex items-center">
+                             <div className="w-2 h-2 rounded-full bg-amber-500 mr-2" />
+                             No Website Detected
+                           </div>
+                         )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Contact Reference</label>
+                      <p className="text-lg font-mono font-medium text-gray-900 bg-gray-50 p-3 rounded-lg border border-gray-100">{currentLead?.phoneNumber}</p>
+                    </div>
+                 </div>
+
+                 <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Activity Niche</label>
+                      <p className="p-3 bg-blue-50 text-blue-700 rounded-lg font-medium border border-blue-100">
+                        {currentLead?.niche || 'General Service'}
+                      </p>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="pt-4">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3">All Extended Data (From XLSX)</label>
+                <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100">
+                  {Object.entries(currentLead || {})
+                    .filter(([k]) => !['id', 'name', 'phoneNumber', 'googleMapsUrl', 'listId', '__id', 'hasWebsite', 'niche', 'status', 'notes'].includes(k))
+                    .map(([key, value]) => (
+                      <div key={key} className="flex justify-between p-4 items-center">
+                        <span className="text-xs font-semibold text-gray-500 capitalize">{key.replace(/_/g, ' ')}</span>
+                        <span className="text-sm text-gray-900 font-medium">{String(value)}</span>
+                      </div>
+                    ))
+                  }
+                  {Object.entries(currentLead || {}).filter(([k]) => !['id', 'name', 'phoneNumber', 'googleMapsUrl', 'listId', '__id', 'hasWebsite', 'niche', 'status', 'notes'].includes(k)).length === 0 && (
+                    <p className="p-8 text-center text-xs text-gray-400">No additional columns found in the XLSX.</p>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-gray-400 p-12 text-center bg-gray-50">
-                <div className="space-y-2">
-                  <MapPin className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                  <p>No map data available for this lead.</p>
+
+              <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 flex items-center justify-between">
+                <div className="space-y-1">
+                  <h4 className="font-bold text-blue-900">Research Power Mode</h4>
+                  <p className="text-xs text-blue-700">Open the full Google Maps panel for real-time reviews and employee data.</p>
                 </div>
+                <Button size="lg" className="bg-white text-blue-600 hover:bg-blue-50 border-blue-100 shadow-sm" onClick={() => window.open(currentLead?.googleMapsUrl, '_blank')}>
+                   <ExternalLink className="h-4 w-4 mr-2" /> Launch Research
+                </Button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
