@@ -1,78 +1,116 @@
 "use client";
 
-import { useLeadStore } from '@/store/leadStore';
+import { useLeadStore, Lead } from '@/store/leadStore';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 
 export default function Dashboard() {
-  const { leads, activeListId, lists } = useLeadStore();
+  const { leads, lists } = useLeadStore();
   
-  const activeList = lists.find(l => l.id === activeListId);
-  const activeLeads = leads.filter(l => l.listId === activeListId);
+  // Global Metrics
+  const totalLeads = leads.length;
+  const totalCalled = leads.filter(l => l.status !== 'Uncalled').length;
+  const totalSuccess = leads.filter(l => l.status === 'Interested' || l.status === 'Successful Sale').length;
+  const globalSuccessRate = totalCalled > 0 ? Math.round((totalSuccess / totalCalled) * 100) : 0;
   
-  const totalLeads = activeLeads.length;
-  const calledLeads = activeLeads.filter(l => l.status !== 'Uncalled').length;
-  const successLeads = activeLeads.filter(l => l.status === 'Interested' || l.status === 'Successful Sale').length;
-  
-  const successRate = calledLeads > 0 ? Math.round((successLeads / calledLeads) * 100) : 0;
-  const activeQueue = activeLeads.filter(l => l.status === 'Uncalled').length;
+  const analyticsByList = lists.map(list => {
+    const listLeads = leads.filter(l => l.listId === list.id);
+    const called = listLeads.filter(l => l.status !== 'Uncalled').length;
+    const success = listLeads.filter(l => l.status === 'Interested' || l.status === 'Successful Sale').length;
+    const successRate = called > 0 ? Math.round((success / called) * 100) : 0;
+    
+    return {
+      ...list,
+      total: listLeads.length,
+      called,
+      success,
+      successRate,
+      remaining: listLeads.filter(l => l.status === 'Uncalled').length
+    };
+  });
 
   return (
-    <div className="p-8">
-      <header className="mb-8 flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-1">Dashboard</h1>
-          <p className="text-gray-500">
-            {activeList 
-              ? `Performance metrics for list: ${activeList.name}` 
-              : "Select a list to view performance metrics."}
-          </p>
-        </div>
+    <div className="p-8 space-y-8">
+      <header>
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-1">Global Dashboard</h1>
+        <p className="text-gray-500">Summary of all active campaigns and performance.</p>
       </header>
       
-      {!activeListId ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
-          <p className="text-gray-500 font-medium">No campaign selected. Please go to the Leads page to upload or select a list.</p>
+      {/* Global Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Leads</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-gray-900">{totalLeads}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Overall Calls</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-gray-900">{totalCalled}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Global Success</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-green-600">{globalSuccessRate}%</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Active Lists</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-blue-600">{lists.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Per-List Breakdown */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900">Campaign Performance Breakdown</h3>
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h3 className="text-sm font-medium text-gray-500">List Calls Made</h3>
-              <p className="text-3xl font-bold mt-2 text-gray-900">{calledLeads}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h3 className="text-sm font-medium text-gray-500">Success Rate</h3>
-              <p className="text-3xl font-bold mt-2 text-gray-900">{successRate}%</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <h3 className="text-sm font-medium text-gray-500">Remaining Queue</h3>
-              <p className="text-3xl font-bold mt-2 text-gray-900">{activeQueue} leads</p>
-            </div>
-          </div>
-          
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm min-h-[300px]">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity (Last 5 Calls)</h3>
-            {calledLeads === 0 ? (
-              <div className="flex items-center justify-center h-full text-gray-400 py-12">
-                No calls made in this list yet.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {activeLeads.filter(l => l.status !== 'Uncalled').slice().reverse().slice(0, 5).map(lead => (
-                  <div key={lead.id} className="flex justify-between items-center border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                    <div>
-                      <p className="text-gray-900 font-medium">{lead.name}</p>
-                      <p className="text-sm text-gray-400">{lead.phoneNumber}</p>
-                    </div>
-                    <div className="text-sm px-3 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-600 font-medium">
-                      {lead.status}
-                    </div>
-                  </div>
-                ))}
-              </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Campaign Name</TableHead>
+              <TableHead>Total Leads</TableHead>
+              <TableHead>Calls Made</TableHead>
+              <TableHead>Success Rate</TableHead>
+              <TableHead>Queue Remaining</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {analyticsByList.map(item => (
+              <TableRow key={item.id}>
+                <TableCell className="font-semibold text-gray-900">{item.name}</TableCell>
+                <TableCell>{item.total}</TableCell>
+                <TableCell>{item.called}</TableCell>
+                <TableCell className="font-medium text-green-600">{item.successRate}%</TableCell>
+                <TableCell>
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${item.remaining > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                    {item.remaining} pending
+                  </span>
+                </TableCell>
+              </TableRow>
+            ))}
+            {lists.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-12 text-gray-400">
+                  No active campaigns found. Please upload a lead file to get started.
+                </TableCell>
+              </TableRow>
             )}
-          </div>
-        </>
-      )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

@@ -1,43 +1,71 @@
 import { create } from 'zustand';
-
-export type DialerStateStatus = 'IDLE' | 'DIALING' | 'IN_CALL' | 'DISPOSITION' | 'PAUSED';
+import { Lead } from './leadStore';
 
 interface DialerState {
-  status: DialerStateStatus;
-  activeLeadId: string | null;
-  callTimer: number; // in seconds
-  queue: string[]; // List of lead IDs left to call
-  delaySeconds: number; // Configurable delay between calls
-
-  setStatus: (status: DialerStateStatus) => void;
-  setActiveLead: (id: string | null) => void;
-  setQueue: (queue: string[]) => void;
-  popQueue: () => string | undefined;
+  isDialing: boolean;
+  currentLead: Lead | null;
+  callQueue: Lead[];
+  queueIndex: number;
+  timer: number;
+  
+  startDialing: (leads: Lead[]) => void;
+  stopDialing: () => void;
+  nextLead: () => void;
   incrementTimer: () => void;
   resetTimer: () => void;
-  setDelaySeconds: (seconds: number) => void;
   clearQueue: () => void;
 }
 
 export const useDialerStore = create<DialerState>((set, get) => ({
-  status: 'IDLE',
-  activeLeadId: null,
-  callTimer: 0,
-  queue: [],
-  delaySeconds: 10, // Default 10 second delay
+  isDialing: false,
+  currentLead: null,
+  callQueue: [],
+  queueIndex: 0,
+  timer: 0,
 
-  setStatus: (status) => set({ status }),
-  setActiveLead: (id) => set({ activeLeadId: id }),
-  setQueue: (queue) => set({ queue }),
-  popQueue: () => {
-    const queue = get().queue;
-    if (queue.length === 0) return undefined;
-    const nextId = queue[0];
-    set({ queue: queue.slice(1) });
-    return nextId;
+  startDialing: (leads: Lead[]) => {
+    if (leads.length === 0) return;
+    set({
+      isDialing: true,
+      callQueue: leads,
+      queueIndex: 0,
+      currentLead: leads[0],
+      timer: 0
+    });
   },
-  incrementTimer: () => set((state) => ({ callTimer: state.callTimer + 1 })),
-  resetTimer: () => set({ callTimer: 0 }),
-  setDelaySeconds: (seconds) => set({ delaySeconds: seconds }),
-  clearQueue: () => set({ queue: [], status: 'IDLE', activeLeadId: null, callTimer: 0 }),
+
+  stopDialing: () => {
+    set({
+      isDialing: false,
+      currentLead: null,
+      callQueue: [],
+      queueIndex: 0,
+      timer: 0
+    });
+  },
+
+  nextLead: () => {
+    const { queueIndex, callQueue } = get();
+    const nextIndex = queueIndex + 1;
+    
+    if (nextIndex < callQueue.length) {
+      set({
+        queueIndex: nextIndex,
+        currentLead: callQueue[nextIndex],
+        timer: 0
+      });
+    } else {
+      set({
+        isDialing: false,
+        currentLead: null,
+        callQueue: [],
+        queueIndex: 0,
+        timer: 0
+      });
+    }
+  },
+
+  incrementTimer: () => set((state) => ({ timer: state.timer + 1 })),
+  resetTimer: () => set({ timer: 0 }),
+  clearQueue: () => set({ isDialing: false, currentLead: null, callQueue: [], queueIndex: 0, timer: 0 }),
 }));
