@@ -10,8 +10,8 @@ import { Card, CardContent } from './ui/Card';
 
 export function DialerWidget() {
   const { 
-    isDialing, currentLead, callQueue, queueIndex, stats, timer,
-    startDialing, stopDialing, nextLead, updateLeadStatus: updateDialerStatus,
+    isDialing, currentLead, callQueue, queueIndex, timer,
+    startDialing, stopDialing, nextLead,
     incrementTimer, resetTimer, clearQueue 
   } = useDialerStore();
   
@@ -192,22 +192,37 @@ export function DialerWidget() {
           </div>
 
           {/* Right Pane - Map & Business Info (60%) */}
-          <div className="flex-1 bg-gray-100 flex flex-col relative">
-            <div className="absolute top-4 left-4 z-10">
+          <div className="flex-1 bg-gray-100 flex flex-col relative overflow-hidden">
+            <div className="absolute top-4 left-4 z-10 flex space-x-2">
               <Badge className="bg-white/90 text-gray-700 backdrop-blur-sm border shadow-sm flex items-center space-x-2 px-3 py-1.5 capitalize">
                 <MapPin className="h-3 w-3 text-red-500" />
                 <span>Live Map Insight</span>
               </Badge>
+              {currentLead?.googleMapsUrl && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-7 bg-white/90 backdrop-blur-sm text-[10px] font-bold"
+                  onClick={() => window.open(currentLead.googleMapsUrl, '_blank')}
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" /> Open Main Link
+                </Button>
+              )}
             </div>
+            
             {currentLead?.googleMapsUrl ? (
-              <iframe 
-                src={currentLead.googleMapsUrl.replace('maps/place/', 'maps/embed/v1/place?').includes('?') 
-                  ? currentLead.googleMapsUrl 
-                  : `https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber)}&output=embed`}
-                className="w-full h-full border-0"
-                title="Google Maps Context"
-                allowFullScreen
-              />
+              <div className="w-full h-full flex flex-col pt-12">
+                <iframe 
+                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber)}&output=embed`}
+                  className="w-full h-full border-0 rounded-t-xl"
+                  title="Google Maps Context"
+                  allowFullScreen
+                  loading="lazy"
+                />
+                <div className="p-2 bg-white border-t border-gray-200 text-[10px] text-gray-400 text-center">
+                  Embedded view may limit some features. Use "Open Main Link" for full reviews.
+                </div>
+              </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-400 p-12 text-center bg-gray-50">
                 <div className="space-y-2">
