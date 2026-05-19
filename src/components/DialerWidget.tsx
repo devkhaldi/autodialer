@@ -216,24 +216,24 @@ export function DialerWidget() {
               )}
             </div>
             
-            {currentLead?.googleMapsUrl ? (
+            {currentLead?.googleMapsUrl || currentLead?.name ? (
               <div className="w-full h-full flex flex-col pt-12">
                 <iframe 
-                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber)}&output=embed&iwloc=addr`}
-                  className="w-full h-full border-0 rounded-t-xl"
+                  src={`/api/proxy?url=${encodeURIComponent(currentLead.googleMapsUrl || `https://www.google.com/maps/search/${encodeURIComponent(currentLead.name + " " + (currentLead.phoneNumber || ""))}`)}`}
+                  className="w-full h-full border-0 rounded-t-xl bg-white"
                   title="Google Maps Context"
                   allowFullScreen
                   loading="lazy"
                 />
                 <div className="p-3 bg-white border-t border-gray-200 text-center flex items-center justify-center space-x-4">
-                  <div className="text-[10px] text-gray-400 font-medium">Card display mode active</div>
+                  <div className="text-[10px] text-gray-400 font-medium">Full Interactive Explorer</div>
                   <Button 
                     variant="outline" 
                     size="sm" 
                     className="h-8 border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
-                    onClick={() => window.open(currentLead.googleMapsUrl, '_blank')}
+                    onClick={() => window.open(currentLead?.googleMapsUrl || `https://www.google.com/maps/search/${encodeURIComponent(currentLead?.name || '')}`, '_blank')}
                   >
-                    <ExternalLink className="h-3 w-3 mr-2" /> View Full Reviews & SPA Details
+                    <ExternalLink className="h-3 w-3 mr-2" /> Open in New Tab
                   </Button>
                 </div>
               </div>
