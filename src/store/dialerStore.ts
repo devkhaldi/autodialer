@@ -12,6 +12,8 @@ interface DialerState {
   acwTimer: number;
   callbackMode: boolean;
   setCallbackMode: (val: boolean) => void;
+  delaySeconds: number;
+  setDelaySeconds: (val: number) => void;
   
   startDialing: (leads: Lead[]) => void;
   stopDialing: () => void;
@@ -38,6 +40,8 @@ export const useDialerStore = create<DialerState>()(
       acwTimer: 0,
       callbackMode: false,
       setCallbackMode: (val: boolean) => set({ callbackMode: val }),
+      delaySeconds: 3,
+      setDelaySeconds: (val: number) => set({ delaySeconds: val }),
 
       startDialing: (leads: Lead[]) => {
         if (leads.length === 0) return;
@@ -115,7 +119,10 @@ export const useDialerStore = create<DialerState>()(
     {
       name: 'dialer-storage',
       //@ts-ignore
-      partialize: (state) => ({ callbackMode: state.callbackMode }),
+      partialize: (state) => ({ 
+        callbackMode: state.callbackMode,
+        delaySeconds: state.delaySeconds 
+      }),
     }
   )
 );
