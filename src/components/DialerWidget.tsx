@@ -219,22 +219,23 @@ export function DialerWidget() {
             {currentLead?.googleMapsUrl || currentLead?.name ? (
               <div className="w-full h-full flex flex-col pt-12">
                 <iframe 
-                  src={`/api/proxy?url=${encodeURIComponent(currentLead.googleMapsUrl || `https://www.google.com/maps/search/${encodeURIComponent(currentLead.name + " " + (currentLead.phoneNumber || ""))}`)}`}
+                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + (currentLead.phoneNumber || ""))}&output=embed&z=17`}
                   className="w-full h-full border-0 rounded-t-xl bg-white"
                   title="Google Maps Context"
                   allowFullScreen
                   loading="lazy"
                 />
-                <div className="p-3 bg-white border-t border-gray-200 text-center flex items-center justify-center space-x-4">
-                  <div className="text-[10px] text-gray-400 font-medium">Full Interactive Explorer</div>
+                <div className="p-4 bg-white border-t border-gray-200 text-center flex flex-col items-center justify-center space-y-3">
+                  <div className="text-[10px] text-gray-400 font-medium uppercase tracking-widest">Interactive Data Panel</div>
                   <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="h-8 border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
+                    variant="default" 
+                    size="lg" 
+                    className="w-full max-w-sm bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 py-6"
                     onClick={() => window.open(currentLead?.googleMapsUrl || `https://www.google.com/maps/search/${encodeURIComponent(currentLead?.name || '')}`, '_blank')}
                   >
-                    <ExternalLink className="h-3 w-3 mr-2" /> Open in New Tab
+                    <ExternalLink className="h-5 w-5 mr-3" /> OPEN BUSINESS CARD & REVIEWS
                   </Button>
+                  <p className="text-[10px] text-gray-400 italic">Click above to view full ratings, photos, and SPA details in a separate window.</p>
                 </div>
               </div>
             ) : (
