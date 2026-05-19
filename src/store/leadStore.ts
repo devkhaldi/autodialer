@@ -37,7 +37,6 @@ interface LeadState {
   addLeadsToExistingList: (listId: string, leadsInput: Omit<Lead, 'id' | 'status' | 'listId'>[]) => Promise<void>;
   updateLeadStatus: (id: string, status: Lead['status'], newNotes?: string) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
-  clearAll: () => Promise<void>;
 }
 
 export const useLeadStore = create<LeadState>((set, get) => ({
@@ -82,16 +81,15 @@ export const useLeadStore = create<LeadState>((set, get) => ({
       status: 'Uncalled' as const,
     } as Lead));
 
-    // Update local state first
     set((state) => ({
       lists: [...state.lists, newList],
       leads: [...state.leads, ...newLeads],
       activeListId: listId,
     }));
 
-    // Sync with server
     await fetch('/api/leads', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ list: newList, leads: newLeads }),
     });
   },
@@ -108,12 +106,12 @@ export const useLeadStore = create<LeadState>((set, get) => ({
     } as Lead));
 
     const updatedLeads = [...get().leads, ...newLeads];
-
     set({ leads: updatedLeads });
 
-    // Sync full list data with server
+    // Sync full list data with server (re-saves the XLSX)
     await fetch('/api/leads', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         list, 
         leads: updatedLeads.filter(l => l.listId === listId) 
@@ -122,27 +120,32 @@ export const useLeadStore = create<LeadState>((set, get) => ({
   },
 
   updateLeadStatus: async (id, status, newNotes) => {
-    let affectedListId: string | null = null;
+    const lead = get().leads.find(l => l.id === id);
+    if (!lead) return;
 
-    set((state) => {
-      const updatedLeads = state.leads.map((lead) => {
-        if (lead.id !== id) return lead;
-        affectedListId = lead.listId;
-        const updatedNotes = newNotes
-          ? lead.notes ? `${lead.notes}\n---\n${newNotes}` : newNotes
-          : lead.notes;
-        return { ...lead, status, notes: updatedNotes };
-      });
-      return { leads: updatedLeads };
-    });
+    const updatedNotes = newNotes
+      ? lead.notes ? `${lead.notes}\n---\n${newNotes}` : newNotes
+      : lead.notes;
 
-    if (affectedListId) {
-      const list = get().lists.find(l => l.id === affectedListId);
-      const filteredLeads = get().leads.filter(l => l.listId === affectedListId);
+    // Optimistic Update
+    set((state) => ({
+      leads: state.leads.map((l) => l.id === id ? { ...l, status, notes: updatedNotes } : l),
+    }));
+
+    // Optimized surgical update (PATCH)
+    try {
       await fetch('/api/leads', {
-        method: 'POST',
-        body: JSON.stringify({ list, leads: filteredLeads }),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          listId: lead.listId, 
+          leadId: id, 
+          status, 
+          notes: updatedNotes 
+        }),
       });
+    } catch (err) {
+      console.error("Failed to sync lead update to XLSX:", err);
     }
   },
 
@@ -154,13 +157,5 @@ export const useLeadStore = create<LeadState>((set, get) => ({
     }));
 
     await fetch(`/api/leads?id=${listId}`, { method: 'DELETE' });
-  },
-
-  clearAll: async () => {
-    const { lists } = get();
-    for (const list of lists) {
-      await fetch(`/api/leads?id=${list.id}`, { method: 'DELETE' });
-    }
-    set({ leads: [], lists: [], activeListId: null });
   },
 }));
