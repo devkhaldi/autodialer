@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import querystring from 'querystring';
+// @ts-ignore
+import Zadarma from 'zadarma-api';
 
 export async function POST(request: Request) {
   try {
@@ -16,55 +16,23 @@ export async function POST(request: Request) {
     const cleanFrom = from.replace(/\D/g, '');
     const cleanTo = to.replace(/\D/g, '');
 
-    const method = '/v1/request/callback/';
-    const params = {
-      from: cleanFrom,
-      to: cleanTo,
-    };
-
-    // 1. Sort parameters by key name
-    const sortedKeys = Object.keys(params).sort();
-    const sortedParams: any = {};
-    sortedKeys.forEach(key => {
-      sortedParams[key] = (params as any)[key];
+    console.log(`[Zadarma API] Triggering Callback via SDK: ${from} -> ${to}`);
+    
+    // Initialize Official SDK
+    const api = new Zadarma.Api(apiKey, apiSecret);
+    
+    // Use the official requestCallback helper
+    const result: any = await new Promise((resolve, reject) => {
+        api.requestCallback(cleanFrom, cleanTo, null, null, (data: any) => {
+            resolve(data);
+        });
     });
 
-    // 2. Build query string (Zadarma requires RFC1738 %20 for spaces)
-    const paramsStr = querystring.stringify(sortedParams).replace(/\+/g, '%20');
-
-    // 3. Create signature base: method + paramsStr + md5(paramsStr)
-    const md5Params = crypto.createHash('md5').update(paramsStr).digest('hex');
-    const signatureBase = method + paramsStr + md5Params;
-
-    // 4. Hash with HMAC-SHA1 and base64 encode
-    const signature = crypto
-      .createHmac('sha1', apiSecret)
-      .update(signatureBase)
-      .digest('base64');
-
-    const authHeader = `${apiKey}:${signature}`;
-
-    console.log('[Zadarma API] Signature Base:', signatureBase);
-    console.log('[Zadarma API] Auth Header:', authHeader);
-
-    const url = `https://api.zadarma.com${method}?${paramsStr}`;
-
-    console.log(`[Zadarma API] Triggering Callback: ${from} -> ${to}`);
-
-    const response = await fetch(url, {
-      method: 'GET', // Zadarma callback is typically a GET with auth header
-      headers: {
-        'Authorization': authHeader
-      }
-    });
-
-    const data = await response.json();
-
-    if (data.status === 'success' || data.status === 'ok') {
-      return NextResponse.json({ success: true, data });
+    if (result.status === 'success' || result.status === 'ok') {
+      return NextResponse.json({ success: true, data: result });
     } else {
-      console.error('[Zadarma API] Callback Error:', data);
-      return NextResponse.json({ success: false, error: data.message || 'Zadarma API Error' }, { status: 400 });
+      console.error('[Zadarma API] Callback Error:', result);
+      return NextResponse.json({ success: false, error: result.message || 'Zadarma API Error' }, { status: 400 });
     }
   } catch (error: any) {
     console.error('[Zadarma API] Internal Server Error:', error);
