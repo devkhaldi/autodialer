@@ -80,26 +80,50 @@ export function DialerWidget() {
     };
   }, [isDialing, dialerStatus, incrementTimer, incrementACWTimer]);
 
+  // Ref to cancel in-flight callback requests
+  const abortRef = useRef<AbortController | null>(null);
+  const callingLeadRef = useRef<string | null>(null);
+
   useEffect(() => {
+    // Cancel any previous in-flight request
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+
     if (dialerStatus === 'calling' && currentLead && sipInitialized) {
+      // Guard: don't re-call the same lead
+      if (callingLeadRef.current === currentLead.id) return;
+      callingLeadRef.current = currentLead.id;
+
       if (callbackMode) {
-        // Use Zadarma Callback API
+        // Use Zadarma Callback API with timeout & cancellation
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
         const sipLogin = process.env.NEXT_PUBLIC_ZADARMA_SIP_LOGIN;
         fetch('/api/zadarma/callback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: sipLogin, to: currentLead.phoneNumber })
+          body: JSON.stringify({ from: sipLogin, to: currentLead.phoneNumber }),
+          signal: controller.signal,
         })
         .then(res => res.json())
         .then(data => {
+          clearTimeout(timeoutId);
           if (!data.success) {
             setError(`Callback Failed: ${data.error}`);
-            enterACW();
           }
         })
         .catch(err => {
-          console.error('Callback API Error:', err);
-          setError('Callback API unreachable.');
+          clearTimeout(timeoutId);
+          if (err.name === 'AbortError') {
+            console.log('[Dialer] Callback request cancelled');
+          } else {
+            console.error('Callback API Error:', err);
+            setError('Callback API unreachable. Check connection.');
+          }
         });
       } else {
         // Use Standard Browser WebRTC
@@ -111,8 +135,16 @@ export function DialerWidget() {
         });
       }
     } else if (dialerStatus === 'acw' || dialerStatus === 'idle') {
+      callingLeadRef.current = null;
       if (!callbackMode) hangupCall().catch(console.error);
     }
+
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+    };
   }, [dialerStatus, currentLead, sipInitialized, callbackMode]);
 
   useEffect(() => {
