@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 // @ts-ignore
-import Zadarma from 'zadarma-api';
+import { Api } from 'zadarma-api';
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     console.log(`[Zadarma API] Triggering Callback via SDK: ${from} -> ${to}`);
     
     // Initialize Official SDK
-    const api = new Zadarma.Api(apiKey, apiSecret);
+    const api = new Api(apiKey, apiSecret);
     
     // Use the official requestCallback helper
     const result: any = await new Promise((resolve, reject) => {
