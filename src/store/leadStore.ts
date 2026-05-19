@@ -38,6 +38,7 @@ interface LeadState {
   addLeadsToExistingList: (listId: string, leadsInput: Omit<Lead, 'id' | 'status' | 'listId'>[]) => Promise<void>;
   updateLeadStatus: (id: string, status: Lead['status'], newNotes?: string) => Promise<void>;
   deleteList: (listId: string) => Promise<void>;
+  clearLeads: () => Promise<void>;
 }
 
 export const useLeadStore = create<LeadState>((set, get) => ({
@@ -161,5 +162,15 @@ export const useLeadStore = create<LeadState>((set, get) => ({
     }));
 
     await fetch(`/api/leads?id=${listId}`, { method: 'DELETE' });
+  },
+
+  clearLeads: async () => {
+    const listIds = get().lists.map(l => l.id);
+    set({ leads: [], lists: [], activeListId: null });
+    
+    // Serial or parallel delete all lists
+    await Promise.all(listIds.map(id => 
+      fetch(`/api/leads?id=${id}`, { method: 'DELETE' })
+    ));
   },
 }));
