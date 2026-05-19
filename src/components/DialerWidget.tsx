@@ -17,6 +17,7 @@ export function DialerWidget() {
   
   const { leads, activeListId, lists, setActiveList, updateLeadStatus } = useLeadStore();
   const [error, setError] = useState('');
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -48,6 +49,7 @@ export function DialerWidget() {
     
     // Update local state and XLSX via store
     await updateLeadStatus(currentLead.id, status);
+    setLastSaved(new Date().toLocaleTimeString());
     
     // Move to next lead in dialer
     nextLead();
@@ -158,8 +160,13 @@ export function DialerWidget() {
                   <Button onClick={() => handleStatusUpdate('No Answer')} variant="outline" className="bg-gray-50 text-gray-700 hover:bg-gray-100">No Answer</Button>
                   <Button onClick={() => handleStatusUpdate('Busy')} variant="outline" className="bg-gray-50 text-gray-700 hover:bg-gray-100">Busy</Button>
                   <Button onClick={() => handleStatusUpdate('Failed')} variant="outline" className="bg-red-50 text-red-700 hover:bg-red-100 border-red-200">Invalid Number</Button>
+                  <Button onClick={() => handleStatusUpdate('Failed to Call')} variant="outline" className="bg-red-100/50 text-red-800 hover:bg-red-200/50 border-red-300">Failed to Call</Button>
                   <Button onClick={() => handleStatusUpdate('DNC')} variant="outline" className="bg-red-900/10 text-red-900 border-red-900/20">Do Not Call</Button>
                 </div>
+              </div>
+
+              <div className="pt-4 flex items-center justify-between text-[10px] text-gray-400 font-medium">
+                <span>{lastSaved ? `Last saved to file: ${lastSaved}` : 'Ready to sync to file'}</span>
               </div>
 
               <div className="pt-6 border-t border-gray-200 flex space-x-2">
@@ -213,14 +220,15 @@ export function DialerWidget() {
             {currentLead?.googleMapsUrl ? (
               <div className="w-full h-full flex flex-col pt-12">
                 <iframe 
-                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber)}&output=embed`}
+                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber + (currentLead.address ? " " + currentLead.address : ""))}&output=embed&iwloc=near`}
                   className="w-full h-full border-0 rounded-t-xl"
                   title="Google Maps Context"
                   allowFullScreen
                   loading="lazy"
                 />
-                <div className="p-2 bg-white border-t border-gray-200 text-[10px] text-gray-400 text-center">
-                  Embedded view may limit some features. Use "Open Main Link" for full reviews.
+                <div className="p-2 bg-white border-t border-gray-200 text-[10px] text-gray-400 text-center flex justify-between px-4">
+                  <span>Displaying business context card</span>
+                  <span className="font-semibold text-gray-600">SPA & Reviews Focus</span>
                 </div>
               </div>
             ) : (
