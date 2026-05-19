@@ -21,7 +21,7 @@ export async function GET() {
   await ensureDir();
   try {
     const files = await fs.readdir(UPLOAD_DIR);
-    const lists = [];
+    const lists: any[] = [];
     let allLeads: any[] = [];
 
     for (const file of files) {
@@ -36,7 +36,10 @@ export async function GET() {
         // Metadata is encoded in filename for now: CampaignName__ID.xlsx
         const [cName, listId] = file.replace('.xlsx', '').split('___');
         
-        lists.push({ id: listId, name: cName.replace(/_/g, ' '), createdAt: Date.now() });
+        // Deduplicate lists so each ID appears only once
+        if (!lists.find((l: any) => l.id === listId)) {
+          lists.push({ id: listId, name: cName.replace(/_/g, ' '), createdAt: Date.now() });
+        }
         
         const leads = data.map(row => ({
           ...row,
@@ -48,7 +51,8 @@ export async function GET() {
           googleMapsUrl: row['Google Maps URL'],
           hasWebsite: row['Has Website'],
           status: row.Status || 'Uncalled',
-          notes: row.Notes || ''
+          notes: row.Notes || '',
+          updatedAt: row['Updated At'] || ''
         }));
         
         allLeads = [...allLeads, ...leads];
@@ -83,7 +87,8 @@ export async function POST(request: Request) {
       'Google Maps URL': l.googleMapsUrl,
       'Has Website': l.hasWebsite,
       Status: l.status,
-      Notes: l.notes
+      Notes: l.notes,
+      'Updated At': l.updatedAt || ''
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(xlsxData);
@@ -106,7 +111,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   await ensureDir();
   try {
-    const { listId, leadId, status, notes } = await request.json();
+    const { listId, leadId, status, notes, updatedAt } = await request.json();
     if (!listId || !leadId) return NextResponse.json({ error: 'Missing IDs' }, { status: 400 });
 
     const files = await fs.readdir(UPLOAD_DIR);
@@ -126,6 +131,7 @@ export async function PATCH(request: Request) {
 
     data[rowIndex].Status = status;
     data[rowIndex].Notes = notes;
+    data[rowIndex]['Updated At'] = updatedAt;
 
     // Write back
     const newWorksheet = XLSX.utils.json_to_sheet(data);

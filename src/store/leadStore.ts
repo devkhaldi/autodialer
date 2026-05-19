@@ -9,6 +9,7 @@ export interface Lead {
   notes: string;
   listId: string;
   status: 'Uncalled' | 'Called' | 'Interested' | 'Callback Requested' | 'Failed' | 'DNC' | 'No Answer' | 'Wrong Number' | 'Busy' | 'Answering Machine' | 'Successful Sale' | 'Not Interested';
+  updatedAt?: string;
   [key: string]: any;
 }
 
@@ -127,9 +128,11 @@ export const useLeadStore = create<LeadState>((set, get) => ({
       ? lead.notes ? `${lead.notes}\n---\n${newNotes}` : newNotes
       : lead.notes;
 
+    const updatedAt = new Date().toISOString();
+
     // Optimistic Update
     set((state) => ({
-      leads: state.leads.map((l) => l.id === id ? { ...l, status, notes: updatedNotes } : l),
+      leads: state.leads.map((l) => l.id === id ? { ...l, status, notes: updatedNotes, updatedAt } : l),
     }));
 
     // Optimized surgical update (PATCH)
@@ -141,7 +144,8 @@ export const useLeadStore = create<LeadState>((set, get) => ({
           listId: lead.listId, 
           leadId: id, 
           status, 
-          notes: updatedNotes 
+          notes: updatedNotes,
+          updatedAt
         }),
       });
     } catch (err) {

@@ -5,17 +5,32 @@ import { useLeadStore, Lead } from '@/store/leadStore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/Table';
 import { Badge } from './ui/Badge';
 import { Input } from './ui/Input';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, PhoneCall, ExternalLink, Copy, Check } from 'lucide-react';
 import { Button } from './ui/Button';
+import { useDialerStore } from '@/store/dialerStore';
+import { useRouter } from 'next/navigation';
 
 export function LeadsTable() {
   const { leads, activeListId } = useLeadStore();
+  const { startSingleCall } = useDialerStore();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyUrl = async (id: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy map link:', err);
+    }
+  };
 
   // Filter leads by activeListId and search/status
   const filteredLeads = useMemo(() => {
@@ -84,56 +99,85 @@ export function LeadsTable() {
         </select>
         
         {activeListId && (
-          <div className="ml-auto text-xs text-gray-400 font-medium">
-            Showing {paginatedLeads.length} of {filteredLeads.length} leads
+          <div className="ml-auto text-xs font-black text-blue-500 bg-blue-50/50 px-4 py-1.5 rounded-full uppercase tracking-widest border border-blue-100/50">
+            {paginatedLeads.length} of {filteredLeads.length} Results
           </div>
         )}
       </div>
 
-      <div className="border border-gray-100 rounded-lg overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Phone Number</TableHead>
-              <TableHead>Google Maps</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Notes</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {paginatedLeads.map(lead => (
-              <TableRow key={lead.id}>
-                <TableCell className="font-medium text-gray-900">{lead.name}</TableCell>
-                <TableCell className="font-mono text-sm">{lead.phoneNumber}</TableCell>
-                <TableCell>
-                  {lead.googleMapsUrl ? (
-                    <a href={lead.googleMapsUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm">
-                      View
-                    </a>
-                  ) : '-'}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={getStatusVariant(lead.status) as any}>{lead.status}</Badge>
-                </TableCell>
-                <TableCell className="max-w-[200px] truncate text-xs text-gray-400" title={lead.notes}>
-                  {lead.notes || '-'}
-                </TableCell>
+      <div className="border border-white/20 rounded-[32px] overflow-hidden bg-white/30 backdrop-blur-md shadow-2xl shadow-gray-200/50">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-gray-50/50 border-b border-gray-100">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-gray-400 px-6 w-[40%]">Name</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-gray-400 w-[30%]">Phone (Click to Call)</TableHead>
+                <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-gray-400 w-[30%]">Location Profile</TableHead>
               </TableRow>
-            ))}
-            {filteredLeads.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-20 text-gray-400">
-                  {!activeListId 
-                    ? "Choose a campaign to view leads." 
-                    : (leads.filter(l => l.listId === activeListId).length === 0)
-                      ? "No leads in this campaign file."
-                      : "No results match your search."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {paginatedLeads.map(lead => (
+                <TableRow 
+                  key={lead.id} 
+                  title={lead.notes ? `NOTE: ${lead.notes}` : undefined}
+                  className={`group transition-all duration-300 border-b border-white/40 last:border-0 ${lead.notes ? 'bg-amber-50/40 hover:bg-amber-100/60' : 'hover:bg-white/60'}`}
+                >
+                  <TableCell className="font-bold text-gray-900 py-6 px-6 tracking-tight">
+                    <div className="flex items-center">
+                      {lead.name}
+                      <Badge variant={getStatusVariant(lead.status) as any} className="ml-3 rounded-lg px-2 py-0.5 text-[9px] font-black uppercase">{lead.status}</Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <button 
+                      onClick={() => {
+                        startSingleCall(lead);
+                        router.push('/dialer');
+                      }}
+                      className="flex items-center font-mono text-sm font-bold text-blue-600 hover:text-blue-800 hover:underline transition-all group-hover:scale-105 origin-left"
+                    >
+                      <PhoneCall className="h-3.5 w-3.5 mr-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {lead.phoneNumber}
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    {lead.googleMapsUrl ? (
+                      <button 
+                        onClick={() => handleCopyUrl(lead.id, lead.googleMapsUrl!)}
+                        className={`inline-flex items-center text-[10px] font-black uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-lg border ${
+                          copiedId === lead.id 
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                            : 'bg-gray-50 text-gray-400 border-gray-100 hover:border-blue-200 hover:text-blue-600'
+                        }`}
+                      >
+                        {copiedId === lead.id ? (
+                          <>
+                            <Check className="h-3 w-3 mr-2" /> Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3 mr-2" /> Copy Link
+                          </>
+                        )}
+                      </button>
+                    ) : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filteredLeads.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-20 text-gray-400">
+                    {!activeListId 
+                      ? "Choose a campaign to view leads." 
+                      : (leads.filter(l => l.listId === activeListId).length === 0)
+                        ? "No leads in this campaign file."
+                        : "No results match your search."}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {/* Pagination Controls */}
