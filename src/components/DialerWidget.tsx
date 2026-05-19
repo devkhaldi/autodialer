@@ -159,9 +159,8 @@ export function DialerWidget() {
                   <Button onClick={() => handleStatusUpdate('Not Interested')} variant="outline" className="bg-gray-50 text-gray-700 hover:bg-gray-100">Not Interested</Button>
                   <Button onClick={() => handleStatusUpdate('No Answer')} variant="outline" className="bg-gray-50 text-gray-700 hover:bg-gray-100">No Answer</Button>
                   <Button onClick={() => handleStatusUpdate('Busy')} variant="outline" className="bg-gray-50 text-gray-700 hover:bg-gray-100">Busy</Button>
-                  <Button onClick={() => handleStatusUpdate('Failed')} variant="outline" className="bg-red-50 text-red-700 hover:bg-red-100 border-red-200">Invalid Number</Button>
-                  <Button onClick={() => handleStatusUpdate('Failed to Call')} variant="outline" className="bg-red-100/50 text-red-800 hover:bg-red-200/50 border-red-300">Failed to Call</Button>
-                  <Button onClick={() => handleStatusUpdate('DNC')} variant="outline" className="bg-red-900/10 text-red-900 border-red-900/20">Do Not Call</Button>
+                  <Button onClick={() => handleStatusUpdate('Failed')} variant="outline" className="bg-red-50 text-red-700 hover:bg-red-100 border-red-200 col-span-2">Call Failed / Busy</Button>
+                  <Button onClick={() => handleStatusUpdate('DNC')} variant="outline" className="bg-red-900/10 text-red-900 border-red-900/20 col-span-2">Do Not Call</Button>
                 </div>
               </div>
 
@@ -220,15 +219,22 @@ export function DialerWidget() {
             {currentLead?.googleMapsUrl ? (
               <div className="w-full h-full flex flex-col pt-12">
                 <iframe 
-                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber + (currentLead.address ? " " + currentLead.address : ""))}&output=embed&iwloc=near`}
+                  src={`https://www.google.com/maps?q=${encodeURIComponent(currentLead.name + " " + currentLead.phoneNumber)}&output=embed&iwloc=addr`}
                   className="w-full h-full border-0 rounded-t-xl"
                   title="Google Maps Context"
                   allowFullScreen
                   loading="lazy"
                 />
-                <div className="p-2 bg-white border-t border-gray-200 text-[10px] text-gray-400 text-center flex justify-between px-4">
-                  <span>Displaying business context card</span>
-                  <span className="font-semibold text-gray-600">SPA & Reviews Focus</span>
+                <div className="p-3 bg-white border-t border-gray-200 text-center flex items-center justify-center space-x-4">
+                  <div className="text-[10px] text-gray-400 font-medium">Card display mode active</div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-8 border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100"
+                    onClick={() => window.open(currentLead.googleMapsUrl, '_blank')}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-2" /> View Full Reviews & SPA Details
+                  </Button>
                 </div>
               </div>
             ) : (
