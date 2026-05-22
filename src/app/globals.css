@@ -5,7 +5,37 @@
 }
 
 @layer base {
+  :root {
+    --primary: #7c3aed; /* Lantern Purple */
+    --primary-hover: #6d28d9;
+    --primary-foreground: #ffffff;
+    
+    --bg-app: #ffffff;
+    --bg-page: #f8fafc;
+    --bg-subtle: #f1f5f9;
+    
+    --border-light: #e2e8f0;
+    --border-medium: #cbd5e1;
+    
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+  }
+
   body {
     @apply antialiased;
+    /* Soft mesh gradient background like the screenshot */
+    background: radial-gradient(at 0% 0%, #fae8ff 0px, transparent 50%),
+                radial-gradient(at 100% 0%, #e0e7ff 0px, transparent 50%),
+                radial-gradient(at 100% 100%, #f3e8ff 0px, transparent 50%),
+                radial-gradient(at 0% 100%, #e0f2fe 0px, transparent 50%);
+    background-color: #f8fafc;
+    color: var(--text-main);
+  }
+}
+
+@layer utilities {
+  .bg-dot-pattern {
+    background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+    background-size: 20px 20px;
   }
 }

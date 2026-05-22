@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDialerStore } from '@/store/dialerStore';
 import { useLeadStore, Lead } from '@/store/leadStore';
+import { initSipClient, startCall, hangupCall, stopSipClient } from '@/lib/sipClient';
+import { triggerZadarmaCall } from '@/lib/zadarmaService';
 import { Button } from './ui/Button';
-import { Phone, Play, Square, SkipForward, MapPin, ExternalLink, ListFilter, Check, AlertTriangle, Smartphone, AlertCircle } from 'lucide-react';
+import { Phone, Play, Square, SkipForward, Check, PhoneCall, Zap, AlertCircle, Loader2, ListTodo, Navigation, Clock } from 'lucide-react';
 import { Badge } from './ui/Badge';
 import { Card, CardContent } from './ui/Card';
-import { Switch } from './ui/Switch';
-import { initSipClient, startCall, hangupCall, stopSipClient } from '@/lib/sipClient';
 
 export function DialerWidget() {
   const { 
-    isDialing, currentLead, callQueue, queueIndex, timer, acwTimer, dialerStatus, callbackMode,
+    isDialing, currentLead, callQueue, queueIndex, timer, acwTimer, dialerStatus,
     startDialing, stopDialing, nextLead, setReady, enterACW, getNextLead,
-    incrementTimer, incrementACWTimer, resetTimer, clearQueue, setCallbackMode 
+    incrementTimer, incrementACWTimer, resetTimer, clearQueue,
+    autoCall, callerNumber
   } = useDialerStore();
   
   const { leads, activeListId, lists, setActiveList, updateLeadStatus } = useLeadStore();
@@ -23,45 +24,13 @@ export function DialerWidget() {
   const [isCopied, setIsCopied] = useState(false);
   const [isNextCopied, setIsNextCopied] = useState(false);
   const [localNotes, setLocalNotes] = useState('');
-  const [sipInitialized, setSipInitialized] = useState(false);
-  const [sipError, setSipError] = useState<string | null>(null);
+  const [callStatus, setCallStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
+  const [callError, setCallError] = useState('');
+  const [useCallbackMode, setUseCallbackMode] = useState(true);
+  const [webrtcError, setWebrtcError] = useState('Initializing WebRTC...');
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Initialize SIP Client on Mount
-  useEffect(() => {
-    const sipLogin = process.env.NEXT_PUBLIC_ZADARMA_SIP_LOGIN;
-    const sipPassword = process.env.NEXT_PUBLIC_ZADARMA_SIP_PASSWORD;
-
-    if (sipLogin && sipPassword && !callbackMode) {
-      initSipClient(sipLogin, sipPassword)
-        .then(() => {
-          setSipInitialized(true);
-          setSipError(null);
-        })
-        .catch((err) => {
-          console.error('SIP Init Error:', err);
-          setSipError('WebRTC Blocked. Try Callback Mode.');
-        });
-    } else if (callbackMode) {
-      setSipInitialized(true);
-      setSipError(null);
-    } else {
-      setSipError('Credentials missing');
-    }
-
-    return () => {
-      stopSipClient().catch(console.error);
-    };
-  }, [callbackMode]);
-
-  useEffect(() => {
-    if (callbackMode) {
-      setError(''); // Clear errors when switching to callback mode
-      setSipInitialized(true);
-      setSipError(null);
-    }
-  }, [callbackMode]);
+  const autoCallTriggered = useRef(false);
 
   useEffect(() => {
     if (isDialing) {
@@ -80,72 +49,70 @@ export function DialerWidget() {
     };
   }, [isDialing, dialerStatus, incrementTimer, incrementACWTimer]);
 
-  // Ref to cancel in-flight callback requests
-  const abortRef = useRef<AbortController | null>(null);
-  const callingLeadRef = useRef<string | null>(null);
-
   useEffect(() => {
-    // Cancel any previous in-flight request
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-
-    if (dialerStatus === 'calling' && currentLead && sipInitialized) {
-      // Guard: don't re-call the same lead
-      if (callingLeadRef.current === currentLead.id) return;
-      callingLeadRef.current = currentLead.id;
-
-      if (callbackMode) {
-        // Use Zadarma Callback API with timeout & cancellation
-        const controller = new AbortController();
-        abortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-        const sipLogin = process.env.NEXT_PUBLIC_ZADARMA_SIP_LOGIN;
-        fetch('/api/zadarma/callback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: sipLogin, to: currentLead.phoneNumber }),
-          signal: controller.signal,
-        })
-        .then(res => res.json())
-        .then(data => {
-          clearTimeout(timeoutId);
-          if (!data.success) {
-            setError(`Callback Failed: ${data.error}`);
-          }
+    const sipLogin = process.env.NEXT_PUBLIC_ZADARMA_SIP_LOGIN;
+    const sipPassword = process.env.NEXT_PUBLIC_ZADARMA_SIP_PASSWORD;
+    if (sipLogin && sipPassword) {
+      initSipClient(sipLogin, sipPassword)
+        .then(() => {
+          setUseCallbackMode(false);
+          setWebrtcError('');
         })
         .catch(err => {
-          clearTimeout(timeoutId);
-          if (err.name === 'AbortError') {
-            console.log('[Dialer] Callback request cancelled');
-          } else {
-            console.error('Callback API Error:', err);
-            setError('Callback API unreachable. Check connection.');
-          }
+          console.error("[DialerWidget] SIP Init Error:", err);
+          setUseCallbackMode(true);
+          setWebrtcError('WebRTC Blocked: Using Callback Fallback');
         });
-      } else {
-        // Use Standard Browser WebRTC
-        startCall(currentLead.phoneNumber, () => {
-          enterACW();
-        }).catch((err) => {
-          console.error('Call Error:', err);
-          setError(`Call Failed: ${err.message || 'Unknown Error'}`);
-        });
-      }
-    } else if (dialerStatus === 'acw' || dialerStatus === 'idle') {
-      callingLeadRef.current = null;
-      if (!callbackMode) hangupCall().catch(console.error);
+    } else {
+      setUseCallbackMode(true);
     }
-
     return () => {
-      if (abortRef.current) {
-        abortRef.current.abort();
-        abortRef.current = null;
-      }
+      stopSipClient();
     };
-  }, [dialerStatus, currentLead, sipInitialized, callbackMode]);
+  }, []);
+
+  const handleAutoCall = useCallback(async () => {
+    if (!currentLead?.phoneNumber) return;
+    if (autoCallTriggered.current) return;
+    
+    autoCallTriggered.current = true;
+    setCallStatus('connecting');
+    setCallError('');
+    
+    try {
+      if (useCallbackMode) {
+         const activeCaller = process.env.NEXT_PUBLIC_ZADARMA_SIP_LOGIN || callerNumber;
+         const result = await triggerZadarmaCall(activeCaller, currentLead.phoneNumber);
+         if (!result.success) throw new Error(result.error || 'Server Callback Failed');
+         setCallStatus('active');
+      } else {
+         await startCall(currentLead.phoneNumber, () => {
+           setCallStatus('idle');
+         });
+         setCallStatus('active');
+      }
+    } catch (err: any) {
+      setCallStatus('error');
+      setCallError(err.message || 'Call failed');
+    }
+  }, [currentLead, useCallbackMode, callerNumber]);
+
+  useEffect(() => {
+    if (dialerStatus === 'calling' && currentLead && autoCall) {
+      autoCallTriggered.current = false;
+      handleAutoCall();
+    }
+    if (dialerStatus !== 'calling') {
+      setCallStatus('idle');
+      autoCallTriggered.current = false;
+    }
+  }, [dialerStatus, currentLead, autoCall, handleAutoCall]);
+
+  const handleClickToCall = () => {
+    if (!currentLead?.phoneNumber) return;
+    autoCallTriggered.current = false;
+    handleAutoCall();
+  };
 
   useEffect(() => {
     if (currentLead) {
@@ -165,28 +132,9 @@ export function DialerWidget() {
 
   const handleStatusUpdate = async (status: Lead['status']) => {
     if (!currentLead) return;
-    
-    // Update local state and XLSX via store with the current local notes
     await updateLeadStatus(currentLead.id, status, localNotes);
     setLastSaved(new Date().toLocaleTimeString());
-    
-    // Move to ACW instead of next lead
     enterACW();
-  };
-
-  const copyLeadInfo = () => {
-    if (!currentLead) return;
-    const info = `
-Name: ${currentLead.name}
-Phone: ${currentLead.phoneNumber}
-${currentLead.googleMapsUrl ? `Maps: ${currentLead.googleMapsUrl}` : ''}
-${Object.entries(currentLead)
-  .filter(([k]) => !['id', 'name', 'phoneNumber', 'googleMapsUrl', 'listId', '__id'].includes(k))
-  .map(([k, v]) => `${k}: ${v}`)
-  .join('\n')}
-    `.trim();
-    navigator.clipboard.writeText(info);
-    alert("Lead info copied!");
   };
 
   const copyLeadLink = () => {
@@ -210,17 +158,26 @@ ${Object.entries(currentLead)
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const DispositionBtn = ({ status, label, colors }: { status: Lead['status']; label: string; colors: string }) => (
+    <button 
+      onClick={() => handleStatusUpdate(status)} 
+      className={`group flex items-center justify-center p-3 h-[60px] rounded-[10px] bg-white border border-[#e2e8f0] transition-all duration-200 shadow-sm hover:shadow-md ${colors}`}
+    >
+      <span className="font-semibold text-[13px] tracking-tight">{label}</span>
+    </button>
+  );
+
   return (
-    <div className="flex flex-col h-full bg-white">
-      {/* Dialer Header / Configuration */}
-      <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+    <div className="flex flex-col h-full bg-[#f8fafc] w-full">
+      {/* Dialer Settings Bar */}
+      <div className="p-4 px-6 border-b border-[#e2e8f0] flex items-center justify-between bg-white shrink-0">
         <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2 text-sm text-gray-500 font-medium">
-            <ListFilter className="h-4 w-4" />
-            <span>Select List:</span>
+          <div className="flex items-center text-[13px] text-[#64748b] font-medium">
+            <ListTodo className="h-4 w-4 mr-2" />
+            Active List
           </div>
           <select 
-            className="bg-white border border-gray-300 text-sm rounded-md px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none min-w-[200px]"
+            className="bg-white border text-[13px] border-[#cbd5e1] rounded-md px-3 py-1.5 text-[#0f172a] focus:ring-1 focus:ring-[#7c3aed] focus:border-[#7c3aed] outline-none min-w-[200px]"
             value={activeListId || ''}
             onChange={(e) => setActiveList(e.target.value)}
             disabled={isDialing}
@@ -230,289 +187,242 @@ ${Object.entries(currentLead)
             ))}
             {lists.length === 0 && <option value="">No lists available</option>}
           </select>
-        </div>
-
-        <div className="flex items-center space-x-3 bg-white/40 px-4 py-2 rounded-lg border border-white/50">
-          <Smartphone size={16} className={callbackMode ? 'text-amber-600' : 'text-gray-400'} />
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter leading-none mb-1">Engine Mode</span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{callbackMode ? 'Hybrid Callback' : 'WebRTC Direct'}</span>
-              <Switch 
-                checked={callbackMode} 
-                onCheckedChange={setCallbackMode}
-                disabled={isDialing && dialerStatus === 'calling'}
-              />
+          {autoCall && callerNumber && (
+            <div className="flex items-center space-x-1.5 text-[12px] font-semibold text-[#10b981] bg-[#10b981]/10 px-2.5 py-1 rounded-md border border-[#10b981]/20">
+              <Zap className="h-3.5 w-3.5" />
+              <span>Auto-Dial ON</span>
             </div>
-          </div>
+          )}
         </div>
-
-        {callbackMode && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50/50 border border-amber-200/50 rounded-full animate-pulse">
-            <AlertCircle size={12} className="text-amber-600" />
-            <span className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Network Bypass Active</span>
-          </div>
-        )}
 
         {isDialing && (
           <div className="flex items-center space-x-6">
-            <div className="text-sm font-medium text-gray-500">
-              Queue: <span className="text-gray-900">{queueIndex + 1} / {callQueue.length}</span>
-            </div>
-            <div className="text-sm font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-              {formatTime(timer)}
+            <div className="flex items-center space-x-2">
+              <span className="text-[12px] font-bold text-[#64748b] uppercase">Queue</span>
+              <span className="text-[14px] font-bold text-[#0f172a] px-2 py-0.5 bg-[#f1f5f9] rounded-md border border-[#e2e8f0]">{queueIndex + 1} / {callQueue.length}</span>
             </div>
           </div>
         )}
-      {/* SIP Status Bar */}
-      {sipError && (
-        <div className="bg-red-50 border-b border-red-100 flex items-center justify-center p-2 text-xs font-bold text-red-600 space-x-2">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          <span>{sipError}</span>
-        </div>
-      )}
-      {!sipInitialized && !sipError && (
-        <div className="bg-blue-50 border-b border-blue-100 flex items-center justify-center p-2 text-xs font-bold text-blue-600 animate-pulse">
-          Connecting to Zadarma SIP Server...
-        </div>
-      )}
-    </div>
+      </div>
 
       {!isDialing ? (
-        <div className="flex-1 flex items-center justify-center p-8">
-           <Card className="max-w-md w-full border-dashed border-2 shadow-none">
-             <CardContent className="pt-10 pb-10 text-center space-y-4">
-               <div className="mx-auto w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4">
-                  <Phone className="h-8 w-8" />
-               </div>
-               <h3 className="text-xl font-semibold text-gray-900">Power Dialer Ready</h3>
-               <p className="text-sm text-gray-500 px-6">
-                 Select a campaign list above to start your automated calling session.
-               </p>
-               {activeListId ? (
-                 <div className="pt-4 px-6">
-                   <div className="bg-blue-50/50 p-3 rounded-lg mb-4 text-xs text-blue-700 flex justify-between items-center">
-                     <span>Uncalled Leads:</span>
-                     <span className="font-bold">{leads.filter(l => l.status === 'Uncalled' && l.listId === activeListId).length}</span>
-                   </div>
-                   {error && <p className="text-xs text-red-500 mb-4">{error}</p>}
-                   <Button onClick={handleStartDialing} size="lg" className="w-full bg-blue-600 hover:bg-blue-700">
-                     <Play className="h-4 w-4 mr-2" /> Start Dialing Session
-                   </Button>
-                 </div>
-               ) : (
-                 <p className="text-xs text-amber-600 font-medium">Please create a list first.</p>
-               )}
-             </CardContent>
+        /* IDLE STATE */
+        <div className="flex-1 flex items-center justify-center p-8 bg-dot-pattern">
+           <Card className="max-w-[420px] w-full p-10 text-center shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border-[#e2e8f0] rounded-[24px]">
+              <div className="mx-auto w-[72px] h-[72px] bg-[#f3e8ff] text-[#7c3aed] rounded-2xl flex items-center justify-center mb-6 shadow-sm border border-[#e9d5ff]">
+                 <Phone className="h-8 w-8" />
+              </div>
+              <h3 className="text-[20px] font-bold text-[#0f172a] mb-2">Power Dialer Ready</h3>
+              <p className="text-[14px] text-[#64748b] mb-8 leading-relaxed px-4">
+                Verify your list selection and click start to begin your automated dialing session.
+              </p>
+              {activeListId ? (
+                <div className="space-y-4">
+                  <div className="bg-[#f8fafc] p-3 rounded-[10px] text-[13px] text-[#475569] flex justify-between items-center font-medium border border-[#e2e8f0]">
+                    <span>Uncalled Leads Ready:</span>
+                    <span className="font-bold text-[#0f172a] text-[15px]">{leads.filter(l => l.status === 'Uncalled' && l.listId === activeListId).length}</span>
+                  </div>
+                  {error && <p className="text-[13px] text-[#ef4444] font-medium">{error}</p>}
+                  <Button onClick={handleStartDialing} size="lg" className="w-full text-[15px]">
+                    <Play className="h-5 w-5 mr-2" /> Start Dialing Session
+                  </Button>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-700 text-[13px] rounded-[10px] font-medium">Please upload and select a list first.</div>
+              )}
            </Card>
         </div>
       ) : (
-        /* IMMERSIVE FULL-BLEED DIALER */
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-white/40 backdrop-blur-xl border-t border-white/20">
-          {/* Main Workspace (Left 60% / Top on Mobile) */}
-          <div className="flex-[3] flex flex-col border-r border-gray-100 bg-gray-50/20 shadow-inner overflow-y-auto">
+        /* ACTIVE DIALER */
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-white">
+          {/* Main Interactions Workspace (Left) */}
+          <div className="flex-[5] flex flex-col border-r border-[#e2e8f0] overflow-y-auto bg-white">
             {dialerStatus === 'calling' ? (
-              <div className="flex-1 flex flex-col p-12 space-y-12 animate-in fade-in duration-500 overflow-y-auto">
-                <div className="space-y-4">
-                  <Badge className="bg-blue-600 text-white border-none px-4 py-1 animate-pulse">ACTIVE CALLING PHASE</Badge>
-                  <h2 className="text-3xl md:text-5xl lg:text-6xl font-black text-gray-900 tracking-tight leading-tight">{currentLead?.name}</h2>
-                  <div className="flex items-center text-xl md:text-4xl text-blue-600 font-black font-mono tracking-tighter">
-                    <Phone className="h-6 w-6 md:h-10 md:w-10 mr-4 fill-blue-600/10" /> {currentLead?.phoneNumber}
+              <div className="flex-1 flex flex-col p-8 md:p-10 space-y-6 animate-in fade-in duration-300">
+                
+                {/* Status Badges Header */}
+                <div className="flex items-center space-x-2">
+                  <Badge className="bg-[#f5f3ff] text-[#7c3aed]  px-3 py-1 animate-pulse border border-[#e9d5ff]">ACTIVE CALL OUTBOUND</Badge>
+                  {callStatus === 'connecting' && <Badge className="bg-amber-50 text-amber-600 border border-amber-200"><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Connecting...</Badge>}
+                  {callStatus === 'active' && <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-200"><Zap className="h-3 w-3 mr-1" /> Zadarma Active</Badge>}
+                  {callStatus === 'error' && <Badge className="bg-red-50 text-red-600 border border-red-200"><AlertCircle className="h-3 w-3 mr-1" /> {callError}</Badge>}
+                </div>
+
+                <div className="py-2">
+                  <h2 className="text-[32px] md:text-[40px] font-bold text-[#0f172a] tracking-tight leading-tight mb-3">{currentLead?.name}</h2>
+                  <div className="flex items-center text-[22px] md:text-[28px] text-[#475569] font-mono tracking-tighter font-semibold">
+                    <Phone className="h-6 w-6 mr-3 text-[#cbd5e1]" /> {currentLead?.phoneNumber}
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-6 py-4">
-                   <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-50 flex items-center space-x-4">
-                      <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
-                        <svg className="w-6 h-6 animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Call Duration</p>
-                        <p className="text-2xl font-mono font-bold text-gray-900">{formatTime(timer)}</p>
-                      </div>
-                   </div>
-                   <Button 
-                     onClick={copyLeadLink} 
-                     variant="outline"
-                     className={`h-[84px] px-8 rounded-2xl font-bold border-2 transition-all ${isCopied ? 'bg-green-50 border-green-500 text-green-700' : 'bg-white hover:bg-gray-50 border-gray-100'}`}
-                   >
-                     {isCopied ? 'Link Copied!' : 'Copy Map Link'}
-                   </Button>
-                </div>
-
-                <div className="flex-1 space-y-8 pt-6">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-black text-gray-400 uppercase tracking-[0.4em]">Disposition Workspace</p>
-                    <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-widest">Select Outcome</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 pb-8">
-                    {/* PRIMARY OUTCOMES */}
-                    <button 
-                      onClick={() => handleStatusUpdate('Interested')} 
-                      className="group flex items-center justify-center h-28 rounded-[32px] bg-white border border-white hover:border-emerald-500 hover:bg-emerald-500 hover:text-white transition-all duration-300 shadow-xl shadow-emerald-100/20"
-                    >
-                      <span className="font-black text-[10px] uppercase tracking-[0.2em]">Interested</span>
-                    </button>
-
-                    <button 
-                      onClick={() => handleStatusUpdate('Successful Sale')} 
-                      className="group flex items-center justify-center h-28 rounded-[32px] bg-white border border-white hover:border-blue-600 hover:bg-blue-600 hover:text-white transition-all duration-300 shadow-xl shadow-blue-100/20"
-                    >
-                      <span className="font-black text-[10px] uppercase tracking-[0.2em]">Sale</span>
-                    </button>
-
-                    <button 
-                      onClick={() => handleStatusUpdate('Callback Requested')} 
-                      className="group flex items-center justify-center h-28 rounded-[32px] bg-white border border-white hover:border-amber-500 hover:bg-amber-500 hover:text-white transition-all duration-300 shadow-xl shadow-amber-100/20"
-                    >
-                      <span className="font-black text-[10px] uppercase tracking-[0.2em]">Callback</span>
-                    </button>
-
-                    <button 
-                      onClick={() => handleStatusUpdate('Busy')} 
-                      className="group flex items-center justify-center h-28 rounded-[32px] bg-white border border-white hover:border-gray-600 hover:bg-gray-600 hover:text-white transition-all duration-300 shadow-xl shadow-gray-100/20"
-                    >
-                      <span className="font-black text-[10px] uppercase tracking-[0.2em]">Busy</span>
-                    </button>
-
-                    {/* SECONDARY OUTCOMES */}
-                    <button 
-                      onClick={() => handleStatusUpdate('No Answer')} 
-                      className="group flex items-center justify-center px-6 h-20 rounded-[28px] bg-white/40 backdrop-blur-sm border border-white hover:border-gray-400 hover:bg-white transition-all duration-200"
-                    >
-                      <span className="font-black text-[10px] text-gray-400 uppercase tracking-widest group-hover:text-gray-900 transition-colors">No Answer</span>
-                    </button>
-
-                    <button 
-                      onClick={() => handleStatusUpdate('Failed')} 
-                      className="group flex items-center justify-center px-6 h-20 rounded-[28px] bg-red-50/30 border border-red-100 hover:border-red-500 hover:bg-red-500 hover:text-white transition-all duration-200"
-                    >
-                      <span className="font-black text-[10px] text-red-700 uppercase tracking-widest group-hover:text-white transition-colors">Failed</span>
-                    </button>
-
-                    <button 
-                      onClick={() => handleStatusUpdate('Not Interested')} 
-                      className="group flex items-center justify-center px-6 h-20 rounded-[28px] bg-white/40 backdrop-blur-sm border border-white hover:border-gray-400 hover:bg-white transition-all duration-200"
-                    >
-                      <span className="font-black text-[10px] text-gray-400 uppercase tracking-widest group-hover:text-gray-900 transition-colors">Not Interested</span>
-                    </button>
-
-                    <button 
-                      onClick={() => handleStatusUpdate('DNC')} 
-                      className="group flex items-center justify-center px-6 h-20 rounded-[28px] bg-gray-900 text-gray-400 hover:text-red-500 border border-gray-800 hover:bg-black transition-all duration-200"
-                    >
-                      <span className="font-black text-[10px] uppercase tracking-[0.2em] transition-colors">DNC Mode</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-8 flex justify-between items-center text-gray-400">
-                  <Button variant="ghost" onClick={stopDialing} className="hover:bg-red-50 hover:text-red-600">
-                    <Square className="h-4 w-4 mr-2" /> Stop Session
+                {/* Main Action Line */}
+                <div className="flex flex-col sm:flex-row items-center gap-4 bg-[#f8fafc] border border-[#e2e8f0] p-4 rounded-[16px] shadow-sm">
+                  <Button
+                    onClick={handleClickToCall}
+                    className="w-full sm:w-auto h-[48px] px-8 bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-semibold text-[15px] shadow-[0_2px_10px_rgba(124,58,237,0.2)] rounded-[10px]"
+                  >
+                    <PhoneCall className="h-5 w-5 mr-3" />
+                    Dial Number Now
                   </Button>
-                  <div className="flex items-center space-x-4 text-xs font-medium">
-                    <span>Queue: {queueIndex + 1} / {callQueue.length}</span>
-                    <Button variant="ghost" size="sm" onClick={nextLead}>Skip <SkipForward className="h-3 w-3 ml-2" /></Button>
+
+                  <div className="flex flex-row w-full sm:w-auto gap-4 items-center">
+
+                    
+                    <Button 
+                      onClick={copyLeadLink} 
+                      variant="outline"
+                      className={`h-[48px] px-6 rounded-[10px] font-semibold transition-colors flex-1 sm:flex-none ${isCopied ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : ''}`}
+                    >
+                      <Navigation className="w-4 h-4 mr-2 text-gray-400" />
+                      {isCopied ? 'Map Link Copied!' : 'Copy Info Link'}
+                    </Button>
                   </div>
+                </div>
+
+                {/* Disposition Grid section matching light theme sections */}
+                <div className="mt-8 bg-[#fef2f2]/40 border border-[#fecaca] rounded-[16px] p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[15px] font-semibold text-[#0f172a] flex items-center">
+                      <ListTodo className="h-4 w-4 mr-2 text-red-500" />
+                      Log Outcome / Disposition
+                    </h3>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Primary */}
+                    <div>
+                      <p className="text-[12px] font-semibold text-[#64748b] mb-2 uppercase tracking-wide">High Intent</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <DispositionBtn status="Interested" label="Interested" colors="hover:border-[#10b981] hover:bg-[#10b981]/5 text-[#0f172a] hover:text-[#10b981]" />
+                        <DispositionBtn status="Successful Sale" label="Successful Sale" colors="hover:border-[#3b82f6] hover:bg-[#3b82f6]/5 text-[#0f172a] hover:text-[#3b82f6]" />
+                        <DispositionBtn status="Callback Requested" label="Callback Request" colors="hover:border-[#f59e0b] hover:bg-[#f59e0b]/5 text-[#0f172a] hover:text-[#f59e0b]" />
+                        <DispositionBtn status="Busy" label="Busy" colors="hover:border-[#64748b] hover:bg-[#f8fafc] text-[#0f172a]" />
+                      </div>
+                    </div>
+                    
+                    {/* Secondary & New */}
+                    <div>
+                      <p className="text-[12px] font-semibold text-[#64748b] mb-2 uppercase tracking-wide">Unsuccessful & Others</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <DispositionBtn status="Dead Air" label="Dead Air" colors="text-[#64748b] hover:bg-gray-50 hover:border-gray-300" />
+                        <DispositionBtn status="No Answer" label="No Answer" colors="text-[#64748b] hover:bg-gray-50 hover:border-gray-300" />
+                        <DispositionBtn status="Customer Hang Up" label="Cust. Hang Up" colors="text-[#ea580c] hover:bg-orange-50 hover:border-orange-200" />
+                        <DispositionBtn status="Language Barrier" label="Language Barrier" colors="text-[#a855f7] hover:bg-purple-50 hover:border-purple-200" />
+                        
+                        <DispositionBtn status="Owner Not Available" label="Owner N/A" colors="text-[#0d9488] hover:bg-teal-50 hover:border-teal-200" />
+                        <DispositionBtn status="Not Interested" label="Not Interested" colors="text-[#64748b] hover:bg-gray-50 hover:border-gray-300" />
+                        <DispositionBtn status="Failed" label="Failed Connection" colors="text-[#ef4444] hover:bg-red-50 hover:border-red-200" />
+                        <DispositionBtn status="DNC" label="DNC / Blocked" colors="bg-red-50 text-red-600 border-red-200 hover:bg-red-100" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-6 flex justify-between items-center border-t border-[#e2e8f0]">
+                  <Button variant="ghost" onClick={() => { hangupCall(); stopDialing(); }} className="text-red-500 hover:text-red-600 hover:bg-red-50 font-medium h-[40px]">
+                    <Square className="h-4 w-4 mr-2" /> Stop Session & Hang Up
+                  </Button>
+                  <Button variant="secondary" onClick={nextLead} className="font-semibold text-[#0f172a] h-[40px] px-6">
+                    Skip Contact <SkipForward className="h-4 w-4 ml-2" />
+                  </Button>
                 </div>
               </div>
             ) : (
-              /* AFTER-CALL WORK (ACW) STATE */
-              <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-12 animate-in zoom-in-95 duration-500 bg-gradient-to-b from-indigo-50/50 to-white">
-                 <div className="text-center space-y-4">
-                    <div className="inline-flex items-center bg-indigo-600 text-white px-5 py-2 rounded-full text-xs font-bold uppercase tracking-[0.2em] shadow-lg shadow-indigo-200">
-                       <svg className="w-4 h-4 mr-2 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                       Post-Call Processing
-                    </div>
-                    <h2 className="text-6xl font-bold text-gray-900 tracking-tight">Well Done.</h2>
-                    <p className="text-gray-400 font-medium text-lg">Review your notes and prep for the next prospect.</p>
-                 </div>
-
-                 <div className="flex space-x-6">
-                    <div className="bg-white/60 backdrop-blur-md px-10 py-6 rounded-3xl shadow-sm border border-white/50 text-center">
-                      <p className="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] mb-1">Call Duration</p>
-                      <p className="text-3xl font-mono font-bold text-gray-900">{formatTime(timer)}</p>
-                    </div>
-                    <div className="bg-white/60 backdrop-blur-md px-10 py-6 rounded-3xl shadow-sm border border-white/50 text-center">
-                      <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-[0.2em] mb-1">Stay Active</p>
-                      <p className="text-3xl font-mono font-bold text-gray-900">{formatTime(acwTimer)}</p>
-                    </div>
-                 </div>
-
-                 {/* NEXT LEAD PRE-CALL PREP */}
-                 {getNextLead() && (
-                   <div className="w-full max-w-xl bg-white border-2 border-indigo-100 rounded-[40px] p-8 shadow-2xl shadow-indigo-100/50 flex flex-col items-center space-y-6 animate-in slide-in-from-bottom-12 duration-700 delay-200">
-                      <div className="text-center">
-                        <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-[0.3em] mb-2 text-center">Up Next</p>
-                        <h4 className="text-2xl font-bold text-gray-900">{getNextLead()?.name}</h4>
+              /* ACW STATE */
+              <div className="flex-1 flex flex-col items-center justify-center p-8 bg-dot-pattern animate-in zoom-in-95 duration-300">
+                 <div className="max-w-md w-full">
+                   <div className="text-center mb-8">
+                      <div className="inline-flex items-center text-[12px] font-bold text-[#7c3aed] bg-[#f3e8ff] px-3.5 py-1.5 rounded-full border border-[#e9d5ff] mb-4 uppercase tracking-widest">
+                         <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Wrap-Up Mode
                       </div>
-                      
-                      <Button 
-                        onClick={copyNextLeadLink} 
-                        variant="secondary"
-                        className={`h-16 px-10 rounded-2xl font-bold text-lg transition-all duration-300 w-full ${isNextCopied ? 'bg-green-100 text-green-700 scale-95' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                      >
-                        {isNextCopied ? (
-                          <span className="flex items-center"><Check className="h-5 w-5 mr-3" /> Next Link Ready!</span>
-                        ) : (
-                          <span className="flex items-center italic text-sm">Research Next Candidate (Copy Link)</span>
-                        )}
-                      </Button>
+                      <h2 className="text-[32px] font-bold text-[#0f172a] tracking-tight mb-2">Outcome Saved.</h2>
+                      <p className="text-[15px] text-[#64748b]">Finish your notes before proceeding to the next prospect.</p>
                    </div>
-                 )}
-
-                 <div className="flex flex-col items-center w-full max-w-sm space-y-4">
-                    <Button 
-                      onClick={setReady} 
-                      size="lg" 
-                      className="w-full h-24 text-2xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-3xl shadow-2xl shadow-blue-200 group relative overflow-hidden"
-                    >
-                      <span className="relative z-10">START NEXT CALL</span>
-                      <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                    </Button>
-                    
-                    <div className="flex items-center space-x-6 text-gray-400 font-bold uppercase text-[10px] tracking-[0.2em]">
-                       <button onClick={stopDialing} className="hover:text-red-500 transition-colors px-4 py-2">Finish Session</button>
-                    </div>
+  
+                   <Card className="mb-6 p-1 border-[#e2e8f0]">
+                     <div className="bg-[#f8fafc] rounded-[10px] p-6 flex flex-row justify-center">
+                      <div className="text-center px-4">
+                        <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide mb-1">Wrap-up Time</p>
+                        <p className="text-[24px] font-mono font-bold text-[#0f172a]">{formatTime(acwTimer)}</p>
+                      </div>
+                     </div>
+                   </Card>
+  
+                   {getNextLead() && (
+                     <div className="bg-white border border-[#e2e8f0] rounded-[16px] p-5 shadow-sm text-center mb-8 text-[#0f172a]">
+                        <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide mb-1">Up Next</p>
+                        <h4 className="text-[18px] font-bold mb-4">{getNextLead()?.name}</h4>
+                        <Button 
+                          onClick={copyNextLeadLink} 
+                          variant="outline"
+                          className={`w-full font-semibold h-[40px] ${isNextCopied ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : ''}`}
+                        >
+                          {isNextCopied ? (
+                            <span className="flex items-center"><Check className="h-4 w-4 mr-2" /> Next Map Link Copied!</span>
+                          ) : (
+                            <span className="flex items-center">Research Next Candidate</span>
+                          )}
+                        </Button>
+                     </div>
+                   )}
+  
+                   <Button 
+                     onClick={setReady} 
+                     className="w-full h-[56px] text-[16px] font-bold bg-[#7c3aed] text-white hover:bg-[#6d28d9] shadow-md rounded-[12px] mb-4"
+                   >
+                     START NEXT CALL
+                   </Button>
+                   <div className="text-center">
+                     <button onClick={stopDialing} className="text-[#64748b] hover:text-[#ef4444] text-[13px] font-semibold transition-colors">
+                       Finish dialing session completely
+                     </button>
+                   </div>
                  </div>
               </div>
             )}
           </div>
 
-          {/* Persistent Notes Panel (Right 40% / Bottom on Mobile) */}
-          <div className="flex-[2] flex flex-col p-8 bg-white border-l border-gray-100 shadow-xl overflow-y-auto min-h-[400px] lg:min-h-0">
-             <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-bold text-gray-900 flex items-center">
-                  <svg className="w-5 h-5 mr-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+          {/* Notes Panel (Right side) */}
+          <div className="flex-[3] flex flex-col p-6 bg-[#f8fafc] border-l border-[#e2e8f0] max-w-[400px]">
+             <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[15px] font-semibold text-[#0f172a] flex items-center">
+                  <svg className="w-5 h-5 mr-2 text-[#7c3aed]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                   Internal Notes
                 </h3>
-                <div className="flex items-center space-x-2">
-                   <div className={`w-2 h-2 rounded-full ${dialerStatus === 'calling' ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} />
-                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Live Syncing</span>
+                <div className="flex items-center space-x-1.5">
+                   <div className={`w-1.5 h-1.5 rounded-full ${dialerStatus === 'calling' ? 'bg-[#ef4444] animate-pulse' : 'bg-[#10b981]'}`} />
+                   <span className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Syncing</span>
                 </div>
              </div>
              
              <textarea
-               className="flex-1 w-full p-8 bg-gray-50/50 rounded-3xl border-2 border-gray-100 focus:border-indigo-500 focus:ring-0 text-gray-800 resize-none text-lg leading-relaxed placeholder:text-gray-300 placeholder:italic transition-all shadow-inner font-medium"
-               placeholder="Type your notes here during the call... (Saved automatically)"
+               className="flex-1 w-full p-4 bg-white rounded-[12px] border border-[#e2e8f0] focus:border-[#7c3aed] focus:ring-1 focus:ring-[#7c3aed] text-[#0f172a] text-[14px] leading-relaxed placeholder:text-[#94a3b8] transition-shadow shadow-sm outline-none resize-none font-medium"
+               placeholder="Type your notes during the call... (Saved automatically upon outcome selection)"
                value={localNotes}
                onChange={(e) => setLocalNotes(e.target.value)}
              />
              
-             <div className="mt-8 p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-4">Lead Quick-Look</p>
-                <div className="space-y-4">
-                   <div className="flex justify-between items-center">
-                     <span className="text-xs text-gray-500">Call Stage</span>
-                     <span className="text-xs font-bold text-gray-900 uppercase tracking-tighter">{dialerStatus}</span>
+             <div className="mt-4 p-4 bg-white rounded-[12px] border border-[#e2e8f0] shadow-sm">
+                <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide mb-3">CRM Data Overview</p>
+                <div className="space-y-2.5">
+                   <div className="flex justify-between items-center bg-[#f8fafc] p-2 px-3 rounded-lg border border-[#e2e8f0] border-dashed">
+                     <span className="text-[12px] font-semibold text-[#475569]">Call Stage</span>
+                     <span className="text-[12px] font-bold text-[#0f172a] uppercase tracking-tight">{dialerStatus}</span>
                    </div>
-                   <div className="flex justify-between items-center">
-                     <span className="text-xs text-gray-500">Website Status</span>
-                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${currentLead?.hasWebsite !== 'N/A' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                   <div className="flex justify-between items-center bg-[#f8fafc] p-2 px-3 rounded-lg border border-[#e2e8f0] border-dashed">
+                     <span className="text-[12px] font-semibold text-[#475569]">Website</span>
+                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${currentLead?.hasWebsite !== 'N/A' ? 'bg-[#dcfce7] text-[#166534]' : 'bg-[#fef3c7] text-[#92400e]'}`}>
                         {currentLead?.hasWebsite !== 'N/A' ? 'ACTIVE' : 'MISSING'}
                      </span>
                    </div>
+                   {autoCall && (
+                     <div className="flex justify-between items-center bg-[#f8fafc] p-2 px-3 rounded-lg border border-[#e2e8f0] border-dashed">
+                       <span className="text-[12px] font-semibold text-[#475569]">Zadarma</span>
+                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${callStatus === 'active' ? 'bg-[#dcfce7] text-[#166534]' : callStatus === 'connecting' ? 'bg-[#fef3c7] text-[#92400e]' : callStatus === 'error' ? 'bg-[#fee2e2] text-[#991b1b]' : 'bg-[#e2e8f0] text-[#475569]'}`}>
+                         {callStatus === 'active' ? 'CONN' : callStatus === 'connecting' ? 'DIALING...' : callStatus === 'error' ? 'ERR' : 'IDLE'}
+                       </span>
+                     </div>
+                   )}
                 </div>
              </div>
           </div>

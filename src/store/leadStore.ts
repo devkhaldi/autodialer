@@ -8,7 +8,7 @@ export interface Lead {
   hasWebsite: string;
   notes: string;
   listId: string;
-  status: 'Uncalled' | 'Called' | 'Interested' | 'Callback Requested' | 'Failed' | 'DNC' | 'No Answer' | 'Wrong Number' | 'Busy' | 'Answering Machine' | 'Successful Sale' | 'Not Interested';
+  status: 'Uncalled' | 'Called' | 'Interested' | 'Callback Requested' | 'Failed' | 'DNC' | 'No Answer' | 'Wrong Number' | 'Busy' | 'Answering Machine' | 'Successful Sale' | 'Not Interested' | 'Dead Air' | 'Customer Hang Up' | 'Language Barrier' | 'Owner Not Available';
   updatedAt?: string;
   [key: string]: any;
 }

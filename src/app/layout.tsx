@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "autodialer",
-  description: "Production-ready WebRTC Auto Dialer for outbound sales",
+  description: "Production-ready Auto Dialer for outbound sales",
 };
 
 export default function RootLayout({
@@ -18,12 +18,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans bg-gray-50 text-gray-900 flex h-screen overflow-hidden`}>
+      <body className={`${inter.variable} font-sans flex h-screen w-screen overflow-hidden p-4 md:p-8`}>
         <DataInitializer />
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        {/* Floating App Container */}
+        <div className="flex w-full h-full bg-white rounded-[24px] shadow-2xl overflow-hidden border border-gray-100">
+          <Sidebar />
+          <main className="flex-1 overflow-y-auto bg-white">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   );

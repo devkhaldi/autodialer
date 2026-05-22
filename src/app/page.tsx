@@ -1,42 +1,41 @@
 "use client";
 
-import { useLeadStore, Lead } from '@/store/leadStore';
+import { useLeadStore } from '@/store/leadStore';
+import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Users, Phone, TrendingUp, Layers, Calendar, BarChart3, Waves } from 'lucide-react';
+import { Users, Phone, TrendingUp, Layers, MousePointer2, Settings2, BarChart2, BellRing, BriefcaseBusiness, Globe, Box } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Dashboard() {
   const { leads, lists } = useLeadStore();
   
-  // Temporal Helpers
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const weekStart = todayStart - (now.getDay() * 24 * 60 * 60 * 1000);
-  
-  // Global Metrics
   const totalLeads = leads.length;
   const calledLeads = leads.filter(l => l.status !== 'Uncalled');
   const totalCalled = calledLeads.length;
   
-  const callsToday = calledLeads.filter(l => l.updatedAt && new Date(l.updatedAt).getTime() >= todayStart).length;
-  const callsThisWeek = calledLeads.filter(l => l.updatedAt && new Date(l.updatedAt).getTime() >= weekStart).length;
-
   const totalSuccess = leads.filter(l => l.status === 'Interested' || l.status === 'Successful Sale').length;
   const globalSuccessRate = totalCalled > 0 ? Math.round((totalSuccess / totalCalled) * 100) : 0;
   
-  const statusCounts = leads.reduce((acc: any, lead) => {
+  const statusCounts = leads.reduce((acc: Record<string, number>, lead) => {
     if (lead.status !== 'Uncalled') {
       acc[lead.status] = (acc[lead.status] || 0) + 1;
     }
     return acc;
   }, {});
 
+  const getStatusColor = (status: string) => {
+    if (status === 'Interested' || status === 'Successful Sale') return 'bg-[#10b981]';
+    if (status === 'Failed' || status === 'DNC' || status === 'Dead Air') return 'bg-[#ef4444]';
+    if (status === 'Callback Requested' || status === 'Busy' || status === 'Customer Hang Up') return 'bg-[#f59e0b]';
+    return 'bg-[#7c3aed]';
+  };
+
   const analyticsByList = lists.map(list => {
     const listLeads = leads.filter(l => l.listId === list.id);
     const called = listLeads.filter(l => l.status !== 'Uncalled').length;
     const success = listLeads.filter(l => l.status === 'Interested' || l.status === 'Successful Sale').length;
     const successRate = called > 0 ? Math.round((success / called) * 100) : 0;
-    
     return {
       ...list,
       total: listLeads.length,
@@ -48,151 +47,150 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="p-12 space-y-12 bg-gradient-to-tr from-gray-50 to-white min-h-full">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="flex items-center space-x-3">
-             <div className="p-2 bg-indigo-600 rounded-lg text-white">
-                <BarChart3 className="h-6 w-6" />
-             </div>
-             <h1 className="text-5xl font-black tracking-tight text-gray-900 leading-none">Intelligence</h1>
-          </div>
-          <p className="text-gray-400 font-bold text-sm uppercase tracking-[0.3em] flex items-center">
-             <Waves className="h-3 w-3 mr-2 text-blue-500 animate-pulse" />
-             Live Outreach Performance
-          </p>
-        </div>
-        
-        <div className="flex items-center gap-4">
-           <div className="bg-white/40 backdrop-blur-md px-8 py-4 rounded-3xl border border-white/60 shadow-xl shadow-gray-100/50 flex items-center space-x-4 group hover:scale-105 transition-transform duration-300">
-              <div className="p-3 bg-blue-50 rounded-2xl text-blue-600">
-                <Calendar className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-0.5">Today Performance</p>
-                <div className="flex items-end space-x-2">
-                  <span className="text-3xl font-black text-gray-900 leading-none">{callsToday}</span>
-                  <span className="text-[10px] text-gray-400 font-bold mb-1">CALLS</span>
-                </div>
-              </div>
-           </div>
-           <div className="bg-white/40 backdrop-blur-md px-8 py-4 rounded-3xl border border-white/60 shadow-xl shadow-gray-100/50 flex items-center space-x-4 group hover:scale-105 transition-transform duration-300">
-              <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600">
-                <TrendingUp className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">Weekly Velocity</p>
-                <div className="flex items-end space-x-2">
-                  <span className="text-3xl font-black text-gray-900 leading-none">{callsThisWeek}</span>
-                  <span className="text-[10px] text-gray-400 font-bold mb-1">TOTAL</span>
-                </div>
-              </div>
-           </div>
+    <div className="flex flex-col min-h-full">
+      {/* Header - Very clean, border bottom */}
+      <header className="h-[72px] px-8 flex items-center border-b border-[#e2e8f0] bg-white sticky top-0 z-10">
+        <div className="flex items-center text-[15px] font-semibold text-[#0f172a]">
+           <svg className="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+           Dashboard Overview
         </div>
       </header>
-      
-      {/* Global Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-10">
-        <div className="bg-white/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/60 shadow-2xl shadow-gray-200/40 relative overflow-hidden group">
-          <Users className="absolute -right-4 -bottom-4 h-24 w-24 text-gray-100 group-hover:scale-110 transition-transform duration-500" />
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4 relative z-10">Total Network</p>
-          <p className="text-5xl font-black text-gray-900 leading-tight relative z-10">{totalLeads.toLocaleString()}</p>
-          <div className="mt-4 flex items-center text-xs font-bold text-gray-400">
-             <span className="text-green-500 mr-2">↑ Ready</span> active data
-          </div>
-        </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 p-10 bg-white">
         
-        <div className="bg-white/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/60 shadow-2xl shadow-gray-200/40 relative overflow-hidden group">
-          <Phone className="absolute -right-4 -bottom-4 h-24 w-24 text-gray-100 group-hover:scale-110 transition-transform duration-500" />
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4 relative z-10">Engagements</p>
-          <p className="text-5xl font-black text-gray-900 leading-tight relative z-10">{totalCalled.toLocaleString()}</p>
-          <div className="mt-4 flex items-center text-xs font-bold text-blue-500">
-             <span className="mr-2">⚡ Processing</span> {Math.round((totalCalled/totalLeads)*100 || 0)}% coverage
+        {totalLeads === 0 ? (
+          /* Empty State matches Lantern's centered dotted background */
+          <div className="flex flex-col items-center justify-center p-20 bg-dot-pattern rounded-3xl border border-[#e2e8f0]/60 mb-10">
+            <div className="w-16 h-16 bg-[#f3e8ff] rounded-2xl flex items-center justify-center mb-6 shadow-sm border border-[#e9d5ff]">
+              <Database className="w-8 h-8 text-[#7c3aed]" />
+            </div>
+            <h2 className="text-[20px] font-bold text-[#0f172a] mb-2">You don't have any leads yet</h2>
+            <p className="text-[#64748b] text-[15px] text-center max-w-sm mb-8 leading-relaxed">
+              Select an import method or create a new campaign from scratch to begin autodialing.
+            </p>
           </div>
+        ) : (
+          /* Stats Grid */
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="p-5 rounded-[12px] border border-[#e2e8f0] bg-white text-left shadow-[0_2px_8px_-4px_rgba(0,0,0,0.02)]">
+              <p className="text-[13px] font-medium text-[#64748b] mb-1">Total Network</p>
+              <p className="text-[28px] font-bold text-[#0f172a]">{totalLeads.toLocaleString()}</p>
+            </div>
+            <div className="p-5 rounded-[12px] border border-[#e2e8f0] bg-white text-left shadow-[0_2px_8px_-4px_rgba(0,0,0,0.02)]">
+              <p className="text-[13px] font-medium text-[#64748b] mb-1">Engagements</p>
+              <p className="text-[28px] font-bold text-[#0f172a]">{totalCalled.toLocaleString()}</p>
+            </div>
+            <div className="p-5 rounded-[12px] border border-[#e2e8f0] bg-white text-left shadow-[0_2px_8px_-4px_rgba(0,0,0,0.02)]">
+              <p className="text-[13px] font-medium text-[#64748b] mb-1">Success Rate</p>
+              <p className="text-[28px] font-bold text-[#7c3aed]">{globalSuccessRate}%</p>
+            </div>
+            <div className="p-5 rounded-[12px] border border-[#e2e8f0] bg-white text-left shadow-[0_2px_8px_-4px_rgba(0,0,0,0.02)]">
+              <p className="text-[13px] font-medium text-[#64748b] mb-1">Active Campaigns</p>
+              <p className="text-[28px] font-bold text-[#0f172a]">{lists.length}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Start Calling Block (Matches "Start from scratch" purple block) */}
+        <div className="bg-[#fcfaff] border border-[#e9d5ff] rounded-[14px] p-6 flex flex-row items-center justify-between mb-8 shadow-sm">
+          <div>
+            <h3 className="text-[15px] font-semibold text-[#0f172a] flex items-center mb-1">
+              Start calling session <svg className="w-4 h-4 ml-1.5 text-[#7c3aed]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </h3>
+            <p className="text-[14px] text-[#64748b]">Launch the autodialer to automatically engage with your prospects.</p>
+          </div>
+          <Link href="/dialer">
+            <Button className="font-semibold px-6 shadow-[0_2px_10px_rgba(124,58,237,0.2)]">Launch Workspace</Button>
+          </Link>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 rounded-[40px] shadow-2xl shadow-blue-200 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-20">
-             <TrendingUp className="h-20 w-20 text-white" />
-          </div>
-          <p className="text-[10px] font-black text-blue-100 uppercase tracking-[0.3em] mb-4 relative z-10">Market Success</p>
-          <p className="text-6xl font-black text-white leading-tight relative z-10">{globalSuccessRate}%</p>
-          <div className="mt-4 text-xs font-bold text-blue-200">
-             Top Tier Performance
-          </div>
-        </div>
-
-        <div className="bg-white/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/60 shadow-2xl shadow-gray-200/40 relative overflow-hidden group">
-          <Layers className="absolute -right-4 -bottom-4 h-24 w-24 text-gray-100 group-hover:scale-110 transition-transform duration-500" />
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4 relative z-10">Active Segments</p>
-          <p className="text-5xl font-black text-indigo-600 leading-tight relative z-10">{lists.length}</p>
-          <div className="mt-4 text-xs font-bold text-gray-400">
-             Campaigns Optimized
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        {/* Call Status Breakdown */}
-        <div className="lg:col-span-1 space-y-8">
-           <h3 className="text-2xl font-black text-gray-900 px-2 tracking-tight">Outcome Signals</h3>
-           <div className="bg-white/60 backdrop-blur-xl rounded-[40px] shadow-2xl shadow-gray-200/30 border border-white p-10 space-y-6">
-              {Object.entries(statusCounts).sort((a: any, b: any) => b[1] - a[1]).map(([status, count]: any) => (
-                <div key={status} className="flex flex-col space-y-2">
-                   <div className="flex justify-between items-center text-xs">
-                      <span className="font-black text-gray-500 uppercase tracking-widest">{status}</span>
-                      <span className="font-black text-gray-900 text-lg opacity-60">{count}</span>
-                   </div>
-                   <div className="w-full bg-gray-100/50 h-3 rounded-full overflow-hidden p-0.5">
+        {/* Analytics Sections (Matches "Churn risk agent" light blue section layout) */}
+        <div className="space-y-6">
+          {/* Signal & Activity (Blue Tint) */}
+          <div className="bg-[#f0f9ff]/50 border border-[#e0f2fe] rounded-[16px] p-6 pb-8">
+            <div className="flex items-center justify-between mb-5 px-1">
+              <h3 className="text-[15px] font-semibold text-[#0f172a]">Outcome Signals</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Object.entries(statusCounts).map(([status, count]) => (
+                <div key={status} className="bg-white rounded-[12px] p-5 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.04)] border border-[#e2e8f0]">
+                  <p className="text-[13px] font-semibold text-[#0f172a] mb-1 flex items-center">
+                    {status} <svg className="w-3.5 h-3.5 ml-1 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                  </p>
+                  <p className="text-[13px] text-[#64748b] leading-tight mb-4">
+                    Tracked engagement for this particular lead outcome.
+                  </p>
+                  <div className="flex items-center justify-between text-xs font-semibold text-gray-500 mb-1.5">
+                    <span>{count} Leads</span>
+                    <span>{Math.round((count / Math.max(1, totalCalled)) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-[#f1f5f9] h-1.5 rounded-full overflow-hidden">
                       <div 
-                        className={`h-full rounded-full shadow-inner transition-all duration-1000 ${status === 'Interested' || status === 'Successful Sale' ? 'bg-gradient-to-r from-green-400 to-emerald-600' : status === 'Failed' || status === 'DNC' ? 'bg-gradient-to-r from-red-400 to-rose-600' : 'bg-gradient-to-r from-blue-400 to-indigo-600'}`}
+                        className={`h-full rounded-full ${getStatusColor(status)}`}
                         style={{ width: `${Math.round((count / totalCalled) * 100)}%` }}
                       />
-                   </div>
+                  </div>
                 </div>
               ))}
-              {totalCalled === 0 && <p className="text-gray-400 text-center py-12 italic font-medium">Capture engagements to reveal insights.</p>}
-           </div>
-        </div>
+              {totalCalled === 0 && (
+                <div className="col-span-full py-8 text-center text-[#64748b] text-[14px]">
+                  No call outcomes recorded yet.
+                </div>
+              )}
+            </div>
+          </div>
 
-        {/* Per-List Breakdown Table */}
-        <div className="lg:col-span-2 space-y-8">
-          <h3 className="text-2xl font-black text-gray-900 px-2 tracking-tight">Campaign Intelligence</h3>
-          <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-[40px] shadow-2xl shadow-gray-200/40 overflow-hidden">
-            <Table>
-              <TableHeader className="bg-gray-50/30 border-b border-gray-100">
-                <TableRow className="border-none h-16">
-                  <TableHead className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] px-10">Segment</TableHead>
-                  <TableHead className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] text-center">Depth</TableHead>
-                  <TableHead className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] text-center">Reach Progress</TableHead>
-                  <TableHead className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] text-right px-10">Conversion</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {analyticsByList.map((item, idx) => (
-                  <TableRow key={`${item.id}-${idx}`} className="hover:bg-white/60 transition-all border-b border-gray-100/20 h-24">
-                    <TableCell className="font-black text-gray-900 text-xl px-10">{item.name}</TableCell>
-                    <TableCell className="text-center font-bold text-gray-400">{item.total}</TableCell>
-                    <TableCell className="text-center">
-                       <div className="inline-flex flex-col items-center">
-                          <span className={`px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest ${item.remaining > 0 ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-gray-100 text-gray-400'}`}>
-                            {Math.round(((item.total - item.remaining) / item.total) * 100)}% Engaged
-                          </span>
-                       </div>
-                    </TableCell>
-                    <TableCell className="text-right px-10">
-                       <div className="inline-flex flex-col items-end">
-                         <span className="font-black text-green-600 text-3xl leading-none">{item.successRate}%</span>
-                         <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest mt-1">{item.success} HITS</span>
-                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          {/* Campaign Intelligence (Orange/Amber Tint like "Expansion Agent") */}
+          <div className="bg-[#fffbeb]/50 border border-[#fef3c7] rounded-[16px] p-6 pb-8">
+             <div className="flex items-center justify-between mb-5 px-1">
+               <h3 className="text-[15px] font-semibold text-[#0f172a]">Campaign Intelligence</h3>
+               <span className="text-[13px] font-medium text-[#7c3aed] cursor-pointer hover:underline">View all {lists.length} campaigns</span>
+             </div>
+
+             <div className="bg-white rounded-[12px] shadow-[0_2px_8px_-4px_rgba(0,0,0,0.04)] border border-[#e2e8f0] overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                    <TableRow className="border-none">
+                      <TableHead className="font-semibold text-[#334155] h-[48px]">Campaign Segment</TableHead>
+                      <TableHead className="font-semibold text-[#334155] h-[48px] text-center">Volume</TableHead>
+                      <TableHead className="font-semibold text-[#334155] h-[48px] text-center">Progress</TableHead>
+                      <TableHead className="font-semibold text-[#334155] h-[48px] text-right pr-6">Success Rate</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analyticsByList.map((item, idx) => (
+                      <TableRow key={`${item.id}-${idx}`} className="hover:bg-[#f8fafc]/50 border-b border-[#f1f5f9]">
+                        <TableCell className="font-semibold text-[#0f172a] py-4">{item.name}</TableCell>
+                        <TableCell className="text-center font-medium text-[#64748b]">{item.total}</TableCell>
+                        <TableCell className="text-center">
+                           <span className="text-[13px] font-medium bg-[#f1f5f9] text-[#475569] px-2.5 py-1 rounded-md">
+                             {Math.round(((item.total - item.remaining) / item.total) * 100)}% Engaged
+                           </span>
+                        </TableCell>
+                        <TableCell className="text-right pr-6">
+                           <span className="font-semibold text-[#10b981] text-[15px]">{item.successRate}%</span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {lists.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-[#64748b] py-8">No campaigns created yet.</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+             </div>
           </div>
         </div>
+
       </div>
     </div>
   );
+}
+
+// Temporary icon to avoid import issues
+function Database(props: any) {
+  return <svg {...props} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>;
 }
