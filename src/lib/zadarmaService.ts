@@ -10,13 +10,14 @@ export interface CallbackResult {
   data?: Record<string, unknown>;
 }
 
-/**
- * Trigger an outbound call via the Zadarma Callback API.
- * The server route handles authentication and signing.
- * @param from – caller SIP number (e.g. "365816" or PBX ext like "365816-100")
- * @param to – destination phone number (lead's number, digits only)
- */
+// Prevent simultaneous calls which cause Zadarma 500 "exceeded connections" errors
+let isCallInProgress = false;
+
 export async function triggerZadarmaCall(from: string, to: string): Promise<CallbackResult> {
+  if (isCallInProgress) {
+    return { success: false, error: 'A call is already in progress. Please wait.' };
+  }
+
   try {
     const cleanTo = to.replace(/[^0-9+]/g, '');
     const cleanFrom = from.replace(/[^0-9+\-]/g, '');
@@ -24,6 +25,8 @@ export async function triggerZadarmaCall(from: string, to: string): Promise<Call
     if (!cleanFrom || !cleanTo) {
       return { success: false, error: 'Invalid phone numbers provided' };
     }
+
+    isCallInProgress = true;
 
     const res = await fetch('/api/zadarma/callback', {
       method: 'POST',
@@ -47,8 +50,12 @@ export async function triggerZadarmaCall(from: string, to: string): Promise<Call
       success: false,
       error: err instanceof Error ? err.message : 'Network error – could not reach server',
     };
+  } finally {
+    // Release lock after 10 seconds to allow next call
+    setTimeout(() => { isCallInProgress = false; }, 10000);
   }
 }
+
 
 /**
  * Send a test call to verify Zadarma credentials are working.
