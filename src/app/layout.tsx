@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { DataInitializer } from "@/components/DataInitializer";
+import { ZadarmaWidget } from "@/components/ZadarmaWidget";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -27,6 +28,7 @@ export default function RootLayout({
             {children}
           </main>
         </div>
+        <ZadarmaWidget />
       </body>
     </html>
   );
